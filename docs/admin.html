@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin · Frontenac Zone</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@6/dist/css/tabulator_simple.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6/dist/js/tabulator.min.js"></script>
 <style>
   :root{
     --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
@@ -102,6 +104,21 @@
     .side{position:static;flex:auto;display:flex;flex-wrap:wrap;gap:6px;width:100%}
     .navsec{margin:0} .navsec h3{display:none}
   }
+
+  /* Tabulator — themed to match the admin cards */
+  .tabulator{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);font:inherit}
+  .tabulator .tabulator-header{background:var(--surface);border-bottom:1px solid var(--line)}
+  .tabulator .tabulator-header .tabulator-col{background:var(--surface);border-right:0;
+    color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .tabulator .tabulator-header .tabulator-col .tabulator-col-content{padding:11px 14px}
+  .tabulator .tabulator-row{border-top:1px solid var(--line);background:var(--surface)}
+  .tabulator .tabulator-row.tabulator-row-even{background:var(--surface)}
+  .tabulator .tabulator-row:hover{background:var(--snow)}
+  .tabulator .tabulator-row .tabulator-cell{border-right:0;padding:11px 14px}
+  .tabulator .tabulator-footer{background:var(--surface);border-top:1px solid var(--line);color:var(--muted)}
+  .tabulator .tabulator-footer .tabulator-page{border-radius:8px}
+  .tabulator .tabulator-footer .tabulator-page.active{background:var(--alpine);color:#fff;border-color:var(--alpine)}
 </style>
 </head>
 <body>
@@ -245,8 +262,12 @@
 
       <section id="view-sync" class="hidden">
         <h2 class="vtitle">Sync</h2>
-        <div class="card pad soon"><h2>Coming soon</h2>
-          <p>When WhenToHelp last pulled and whether it succeeded (the <code>sync_runs</code> log).</p></div>
+        <div class="toolbar">
+          <button class="ghost" onclick="loadSync()">Refresh</button>
+          <button class="ghost" onclick="exportSync()">Export CSV</button>
+          <span class="count" id="syncsummary"></span>
+        </div>
+        <div id="synctable"></div>
       </section>
 
     </main>
@@ -292,6 +313,7 @@ function go(id){
   else if(id==="categories") loadCategories();
   else if(id==="email") loadEmail();
   else if(id==="coordinators") loadCoordinators();
+  else if(id==="sync") loadSync();
 }
 window.addEventListener("hashchange", ()=>{ if(admin) go(location.hash.replace("#","")||"attendance"); });
 
@@ -540,6 +562,62 @@ async function setPassword(email, name){
   if(error){ alert("Could not set password: "+(error.message||error)); return; }
   if(data && data.error){ alert("Could not set password: "+data.error); return; }
   alert(`Password set for ${email}. They can sign in now with email + password.`);
+}
+
+// ---- sync log ----
+let syncTable=null;
+function fmtSyncWhen(ts){
+  if(!ts) return "—";
+  return new Date(ts).toLocaleString([],
+    { month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" });
+}
+async function loadSync(){
+  const sum=document.getElementById("syncsummary");
+  sum.textContent="Loading…";
+  // sync_runs is readable by admins via the admin_all_sync_runs RLS policy.
+  const { data, error } = await db.from("sync_runs")
+    .select("started_at,people_count,shift_count,ok,message")
+    .order("started_at", { ascending:false });
+  if(error){ sum.textContent=error.message; return; }
+  const rows=data||[];
+
+  if(rows.length){
+    const last=rows[0];
+    sum.innerHTML =
+      `Last sync ${fmtSyncWhen(last.started_at)} · ` +
+      (last.ok ? '<span class="badge b-out">ok</span>' : '<span class="badge b-in">failed</span>') +
+      ` · ${last.people_count ?? "—"} people · ${last.shift_count ?? "—"} shifts`;
+  } else {
+    sum.textContent="No sync runs recorded yet.";
+  }
+
+  if(syncTable){ syncTable.replaceData(rows); return; }
+  syncTable = new Tabulator("#synctable", {
+    data: rows,
+    layout: "fitColumns",
+    height: "560px",
+    pagination: true,
+    paginationSize: 25,
+    paginationSizeSelector: [10,25,50,100],
+    placeholder: "No sync runs recorded yet.",
+    initialSort: [{ column:"started_at", dir:"desc" }],
+    columns: [
+      // ISO timestamps sort correctly as plain strings — no luxon needed.
+      { title:"When", field:"started_at", sorter:"string", widthGrow:2,
+        formatter:c=>fmtSyncWhen(c.getValue()) },
+      { title:"People", field:"people_count", sorter:"number", hozAlign:"right", width:110 },
+      { title:"Shifts", field:"shift_count", sorter:"number", hozAlign:"right", width:110 },
+      { title:"Status", field:"ok", hozAlign:"center", width:120,
+        formatter:c=> c.getValue()
+          ? '<span class="badge b-out">ok</span>'
+          : '<span class="badge b-in">failed</span>' },
+      { title:"Message", field:"message", sorter:"string", widthGrow:3,
+        formatter:c=> c.getValue() || "—" },
+    ],
+  });
+}
+function exportSync(){
+  if(syncTable) syncTable.download("csv", "sync-log.csv");
 }
 
 // ---- go ----
