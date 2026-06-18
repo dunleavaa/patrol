@@ -185,14 +185,23 @@
 
       <section id="view-people" class="hidden">
         <h2 class="vtitle">People</h2>
-        <div class="card pad soon"><h2>Coming soon</h2>
-          <p>The roster synced from WhenToHelp — names, emails, and (once we pull them) cell numbers.</p></div>
+        <div class="toolbar">
+          <button class="ghost" onclick="loadPeople()">Refresh</button>
+          <button class="ghost" onclick="exportPeople()">Export CSV</button>
+          <span class="count" id="peoplesummary"></span>
+        </div>
+        <div id="peopletable"></div>
       </section>
 
       <section id="view-shifts" class="hidden">
         <h2 class="vtitle">Shifts</h2>
-        <div class="card pad soon"><h2>Coming soon</h2>
-          <p>The schedule as it stands in the database, for a given day or range.</p></div>
+        <div class="toolbar">
+          <button class="ghost" onclick="loadShifts()">Refresh</button>
+          <button class="ghost" onclick="exportShifts()">Export CSV</button>
+          <label class="rec" style="gap:6px"><input type="checkbox" id="shiftshidecancelled" checked onchange="applyShiftFilter()"> Hide cancelled</label>
+          <span class="count" id="shiftssummary"></span>
+        </div>
+        <div id="shiftstable"></div>
       </section>
 
       <section id="view-categories" class="hidden">
@@ -313,6 +322,8 @@ function go(id){
   else if(id==="categories") loadCategories();
   else if(id==="email") loadEmail();
   else if(id==="coordinators") loadCoordinators();
+  else if(id==="people") loadPeople();
+  else if(id==="shifts") loadShifts();
   else if(id==="sync") loadSync();
 }
 window.addEventListener("hashchange", ()=>{ if(admin) go(location.hash.replace("#","")||"attendance"); });
@@ -563,6 +574,115 @@ async function setPassword(email, name){
   if(data && data.error){ alert("Could not set password: "+data.error); return; }
   alert(`Password set for ${email}. They can sign in now with email + password.`);
 }
+
+// ---- people ----
+let peopleTable=null;
+async function loadPeople(){
+  const sum=document.getElementById("peoplesummary");
+  sum.textContent="Loading…";
+  const { data, error } = await db.from("people")
+    .select("helper_number,name,first_name,last_name,email,phone,cell,city")
+    .order("name");
+  if(error){ sum.textContent=error.message; return; }
+  const rows=(data||[]).map(p=>({
+    helper_number:p.helper_number, name:p.name, email:p.email||"",
+    phone:p.cell||p.phone||"", city:p.city||"",
+  }));
+  sum.textContent = `${rows.length} ${rows.length===1?"person":"people"}`;
+
+  if(peopleTable){ peopleTable.replaceData(rows); return; }
+  peopleTable = new Tabulator("#peopletable", {
+    data: rows,
+    layout: "fitColumns",
+    height: "620px",
+    pagination: true,
+    paginationSize: 50,
+    paginationSizeSelector: [25,50,100,200],
+    placeholder: "No people synced yet.",
+    initialSort: [{ column:"name", dir:"asc" }],
+    columns: [
+      { title:"Name",  field:"name",  sorter:"string", widthGrow:2, headerFilter:"input" },
+      { title:"Email", field:"email", sorter:"string", widthGrow:2, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"Phone", field:"phone", sorter:"string", width:150, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"City",  field:"city",  sorter:"string", width:150, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"W2H #", field:"helper_number", sorter:"string", width:110 },
+    ],
+  });
+}
+function exportPeople(){ if(peopleTable) peopleTable.download("csv","people.csv"); }
+
+// ---- shifts ----
+let shiftsTable=null;
+function fmtShiftDate(d){
+  if(!d) return "—";
+  const m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return d;
+  const dt=new Date(+m[1], +m[2]-1, +m[3]);           // local, avoids UTC day-shift
+  return dt.toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
+}
+async function loadShifts(){
+  const sum=document.getElementById("shiftssummary");
+  sum.textContent="Loading…";
+  // Embed people / positions / categories via the foreign keys for readable labels.
+  const { data, error } = await db.from("shifts")
+    .select("shift_id,shift_date,start_ts,end_ts,description,cancelled,cat,people(name),positions(name),categories(name)")
+    .order("shift_date", { ascending:false })
+    .order("start_ts");
+  if(error){ sum.textContent=error.message; return; }
+  const rows=(data||[]).map(s=>({
+    shift_date: s.shift_date || "",
+    start_ts: s.start_ts || "",
+    end_ts: s.end_ts || "",
+    person: s.people?.name || "",
+    role: s.positions?.name || "",
+    category: s.categories?.name || s.cat || "",
+    description: s.description || "",
+    cancelled: !!s.cancelled,
+  }));
+  const live=rows.filter(r=>!r.cancelled).length;
+  sum.textContent = `${live} active${rows.length-live?` · ${rows.length-live} cancelled`:""} · ${rows.length} total`;
+
+  if(shiftsTable){ shiftsTable.replaceData(rows).then(applyShiftFilter); return; }
+  shiftsTable = new Tabulator("#shiftstable", {
+    data: rows,
+    layout: "fitColumns",
+    height: "620px",
+    pagination: true,
+    paginationSize: 50,
+    paginationSizeSelector: [25,50,100,200],
+    placeholder: "No shifts synced yet.",
+    initialSort: [{ column:"shift_date", dir:"desc" }, { column:"start_ts", dir:"asc" }],
+    columns: [
+      // shift_date is ISO (YYYY-MM-DD) so string sort is chronological.
+      { title:"Date", field:"shift_date", sorter:"string", width:150,
+        formatter:c=>fmtShiftDate(c.getValue()) },
+      { title:"Time", field:"start_ts", sorter:"string", width:140,
+        formatter:c=>{ const r=c.getRow().getData();
+          const a=hhmmLocal(r.start_ts), b=hhmmLocal(r.end_ts);
+          return a ? (b?`${a}–${b}`:a) : "—"; } },
+      { title:"Person",   field:"person",      sorter:"string", widthGrow:2, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"Role",     field:"role",        sorter:"string", width:120, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"Category", field:"category",    sorter:"string", width:150, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"Event / location", field:"description", sorter:"string", widthGrow:2, headerFilter:"input",
+        formatter:c=> c.getValue() || "—" },
+      { title:"Status", field:"cancelled", hozAlign:"center", width:120,
+        formatter:c=> c.getValue() ? '<span class="badge b-auto">cancelled</span>' : '<span class="badge b-out">active</span>' },
+    ],
+  });
+  applyShiftFilter();
+}
+function applyShiftFilter(){
+  if(!shiftsTable) return;
+  const hide=document.getElementById("shiftshidecancelled").checked;
+  if(hide) shiftsTable.setFilter("cancelled","=",false);
+  else shiftsTable.clearFilter();
+}
+function exportShifts(){ if(shiftsTable) shiftsTable.download("csv","shifts.csv"); }
 
 // ---- sync log ----
 let syncTable=null;
