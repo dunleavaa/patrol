@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Frontenac Zone</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
+    --line:#dde4ea; --red:#c8102e; --alpine:#21506a; --go:#157a47; --go-press:#0f5e38;
+    --shadow:0 1px 2px rgba(20,40,60,.06),0 4px 14px rgba(20,40,60,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--snow);color:var(--ink);
+       font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .hidden{display:none}
+  a{color:var(--alpine)}
+
+  /* full-screen cards (login / denied) */
+  .login-card{max-width:380px;margin:9vh auto 0;background:var(--surface);
+    border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:26px 24px}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--alpine)}
+  h1{font-size:26px;margin:4px 0 18px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 5px}
+  input[type=email],input[type=password],input[type=text],input[type=date],input[type=datetime-local],select,textarea{
+    width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);
+    border-radius:9px;background:#fff;color:var(--ink)}
+  textarea{resize:vertical;line-height:1.45}
+  .btn{font:inherit;font-weight:700;border:0;border-radius:9px;padding:11px 16px;cursor:pointer}
+  .btn-go{background:var(--go);color:#fff;width:100%;margin-top:18px} .btn-go:active{background:var(--go-press)}
+  .btn-google{background:#fff;color:var(--ink);border:1px solid var(--line);width:100%;margin-top:10px;font-weight:600}
+  .or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin:16px 0 4px}
+  .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+  .err{color:var(--red);font-size:14px;margin-top:12px;min-height:18px}
+
+  /* shell */
+  .topbar{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;
+    background:var(--surface);border-bottom:1px solid var(--line);padding:12px 20px}
+  .brand{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--alpine)}
+  .topright{display:flex;align-items:center;gap:14px}
+  .who{font-size:14px;color:var(--muted)} .who b{color:var(--ink)}
+  .ghost{background:#fff;border:1px solid var(--line);color:var(--alpine);font-weight:600;
+    border-radius:9px;padding:8px 12px;cursor:pointer;font-size:14px}
+
+  .layout{display:flex;align-items:flex-start;max-width:1120px;margin:0 auto;gap:26px;padding:22px 20px 60px}
+  .side{flex:0 0 208px;position:sticky;top:62px}
+  .navsec{margin-bottom:15px}
+  .navsec h3{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 6px 10px}
+  .navitem{display:block;padding:9px 12px;border-radius:9px;color:var(--ink);font-weight:600;
+    font-size:15px;cursor:pointer;text-decoration:none}
+  .navitem:hover{background:var(--snow)}
+  .navitem.on{background:var(--alpine);color:#fff}
+  .content{flex:1;min-width:0}
+  .vtitle{font-size:22px;margin:2px 0 16px}
+
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar input[type=date]{width:auto}
+  .count{color:var(--muted);font-size:14px;margin-left:auto}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);overflow:hidden}
+  .pad{padding:20px 22px}
+  .arow{display:grid;grid-template-columns:1.4fr 1fr 1.2fr auto;gap:14px;align-items:center;
+    padding:13px 16px;border-top:1px solid var(--line)}
+  .arow:first-child{border-top:0}
+  .shiftbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+  .grouphd{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--alpine);margin:14px 16px 6px}
+  .grouphd::after{content:"";flex:1;height:1px;background:var(--line)}
+  .grouphd + .arow{border-top:0}
+  .nm{font-weight:600}
+  .sub{font-size:13px;color:var(--muted)}
+  .badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    padding:2px 8px;border-radius:999px;vertical-align:middle}
+  .b-in{background:#fdeaea;color:var(--red)}
+  .b-out{background:#e7f1ea;color:var(--go)}
+  .b-auto{background:#fff3e0;color:#9a5b00}
+  .b-remote{background:#e9eef3;color:var(--alpine)}
+  .outset{display:flex;gap:8px;align-items:center}
+  .outset input{width:200px}
+  .save{background:var(--alpine);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+  .rec{display:flex;gap:7px;align-items:center;font-size:13px;color:var(--muted);white-space:nowrap}
+  .hrs{font-weight:700}
+  .empty{color:var(--muted);text-align:center;padding:34px}
+
+  .crow{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:13px 16px;border-top:1px solid var(--line)}
+  .crow:first-child{border-top:0}
+  .crow select{width:150px}
+  .saved{font-size:12px;color:var(--go);opacity:0;transition:opacity .2s}
+  .saved.show{opacity:1}
+  .modehelp{font-size:13px;color:var(--muted);margin:10px 2px 0}
+
+  .field{margin-bottom:14px}
+  .field .hint{font-size:12px;color:var(--muted);margin-top:4px}
+  .soon{color:var(--muted)}
+  .soon h2{color:var(--ink);margin-top:0}
+  code{background:var(--snow);padding:1px 6px;border-radius:6px;font-size:13px}
+
+  @media(max-width:760px){
+    .layout{flex-direction:column;gap:14px}
+    .side{position:static;flex:auto;display:flex;flex-wrap:wrap;gap:6px;width:100%}
+    .navsec{margin:0} .navsec h3{display:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="hidden">
+  <div class="login-card">
+    <div class="eyebrow">Canadian Ski Patrol · Frontenac Zone</div>
+    <h1>Admin sign-in</h1>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" placeholder="you@example.com">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button class="btn btn-go" onclick="doLogin()">Sign in</button>
+    <div class="or">or</div>
+    <button class="btn btn-google" onclick="doGoogle()">Continue with Google</button>
+    <div id="loginerr" class="err"></div>
+  </div>
+</div>
+
+<!-- DENIED -->
+<div id="denied" class="hidden">
+  <div class="login-card">
+    <div class="eyebrow">Frontenac Zone</div>
+    <h1>Not authorized</h1>
+    <p class="sub">You're signed in as <b id="whoemail"></b>, but that address isn't on the
+       admin list. Ask a coordinator to add you, then sign in again.</p>
+    <button class="btn btn-google" onclick="doSignout()">Sign out</button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">Frontenac Zone · Admin</div>
+    <div class="topright">
+      <span class="who">Signed in as <b id="hello"></b></span>
+      <button class="ghost" onclick="doSignout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <nav class="side" id="side"></nav>
+    <main class="content">
+
+      <section id="view-attendance">
+        <h2 class="vtitle">Attendance</h2>
+        <div class="toolbar">
+          <button class="ghost" onclick="attShift(-1)" aria-label="Previous day">‹</button>
+          <input type="date" id="attdate" onchange="loadAttendance()">
+          <button class="ghost" onclick="attShift(1)" aria-label="Next day">›</button>
+          <button class="ghost" onclick="attToday()">Today</button>
+          <button class="ghost" onclick="loadAttendance()">Refresh</button>
+          <span class="count" id="attcount"></span>
+        </div>
+        <div id="attlist"></div>
+      </section>
+
+      <section id="view-reports" class="hidden">
+        <h2 class="vtitle">Reports</h2>
+        <div class="card pad soon"><h2>Coming soon</h2>
+          <p>Hours by patroller over a date range, with a CSV export for credit tracking.</p></div>
+      </section>
+
+      <section id="view-people" class="hidden">
+        <h2 class="vtitle">People</h2>
+        <div class="card pad soon"><h2>Coming soon</h2>
+          <p>The roster synced from WhenToHelp — names, emails, and (once we pull them) cell numbers.</p></div>
+      </section>
+
+      <section id="view-shifts" class="hidden">
+        <h2 class="vtitle">Shifts</h2>
+        <div class="card pad soon"><h2>Coming soon</h2>
+          <p>The schedule as it stands in the database, for a given day or range.</p></div>
+      </section>
+
+      <section id="view-categories" class="hidden">
+        <h2 class="vtitle">Categories</h2>
+        <div class="card" id="catlist"></div>
+        <p class="modehelp"><b>kiosk</b> = on-site, shows on the Batawa board ·
+           <b>remote</b> = emailed link (Special Events) ·
+           <b>ignore</b> = not a real shift ·
+           <b>review</b> = unrouted, decide later.</p>
+      </section>
+
+      <section id="view-email" class="hidden">
+        <h2 class="vtitle">Email &amp; messages</h2>
+        <div class="card pad">
+          <div class="field">
+            <label for="set_email_from_name">Sender name</label>
+            <input type="text" id="set_email_from_name">
+          </div>
+          <div class="field">
+            <label for="set_email_from_address">Sender address</label>
+            <input type="text" id="set_email_from_address">
+            <div class="hint">Must be the Gmail account or a verified "Send mail as" alias, or Gmail rewrites it.</div>
+          </div>
+          <div class="field">
+            <label for="set_email_reply_to">Reply-to (optional)</label>
+            <input type="text" id="set_email_reply_to">
+          </div>
+          <div class="field">
+            <label for="set_email_subject">Subject</label>
+            <input type="text" id="set_email_subject">
+          </div>
+          <div class="field">
+            <label for="set_email_body_text">Body — plain text</label>
+            <textarea id="set_email_body_text" rows="8"></textarea>
+          </div>
+          <div class="field">
+            <label for="set_email_body_html">Body — HTML</label>
+            <textarea id="set_email_body_html" rows="10"></textarea>
+            <div class="hint">Placeholders: <code>{first_name}</code> <code>{name}</code>
+              <code>{event}</code> <code>{when}</code> <code>{link}</code> <code>{from_name}</code></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <button class="btn btn-go" style="width:auto;margin:0" onclick="saveEmail()">Save changes</button>
+            <span class="saved" id="emailsaved">saved</span>
+            <span class="err" id="emailerr" style="margin:0"></span>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-coordinators" class="hidden">
+        <h2 class="vtitle">Coordinators</h2>
+        <div class="card pad" style="margin-bottom:16px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1;min-width:150px"><label for="co_name">Name</label>
+              <input type="text" id="co_name" placeholder="Full name"></div>
+            <div style="flex:1;min-width:200px"><label for="co_email">Login email</label>
+              <input type="email" id="co_email" placeholder="name@example.com"></div>
+            <button class="btn btn-go" style="width:auto;margin:0" onclick="addCoordinator()">Add</button>
+          </div>
+          <div class="hint" style="margin-top:8px">Authorizes this email for admin access. They sign in with
+            Google using that address, or you create an email + password user for them in Supabase
+            (Authentication &rarr; Users). Adding here doesn't send an invite.</div>
+          <div class="err" id="coerr" style="margin:6px 0 0"></div>
+        </div>
+        <div class="card" id="colist"></div>
+      </section>
+
+      <section id="view-sync" class="hidden">
+        <h2 class="vtitle">Sync</h2>
+        <div class="card pad soon"><h2>Coming soon</h2>
+          <p>When WhenToHelp last pulled and whether it succeeded (the <code>sync_runs</code> log).</p></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://mgnpfgziiwqhfcrkqkqa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_UZw7sVPRN-Q51-zzXW1htQ_2HQwd2t3";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let admin = null;
+
+// ---- nav structure ----
+const NAV = [
+  { title:"Operations", items:[["attendance","Attendance"]] },
+  { title:null,         items:[["reports","Reports"]] },
+  { title:"Records",    items:[["people","People"],["shifts","Shifts"]] },
+  { title:"Setup",      items:[["categories","Categories"],["email","Email & messages"],
+                               ["coordinators","Coordinators"],["sync","Sync"]] },
+];
+const VIEWS = NAV.flatMap(s=>s.items.map(i=>i[0]));
+
+function renderNav(){
+  const side=document.getElementById("side"); side.innerHTML="";
+  for(const sec of NAV){
+    const box=document.createElement("div"); box.className="navsec";
+    if(sec.title){ const h=document.createElement("h3"); h.textContent=sec.title; box.appendChild(h); }
+    for(const [id,label] of sec.items){
+      const a=document.createElement("a"); a.className="navitem"; a.dataset.v=id;
+      a.textContent=label; a.href="#"+id;
+      box.appendChild(a);
+    }
+    side.appendChild(box);
+  }
+}
+function go(id){
+  if(!VIEWS.includes(id)) id="attendance";
+  VIEWS.forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden", v!==id));
+  document.querySelectorAll(".navitem").forEach(a=>a.classList.toggle("on", a.dataset.v===id));
+  if(location.hash!=="#"+id) location.hash=id;
+  if(id==="attendance") loadAttendance();
+  else if(id==="categories") loadCategories();
+  else if(id==="email") loadEmail();
+  else if(id==="coordinators") loadCoordinators();
+}
+window.addEventListener("hashchange", ()=>{ if(admin) go(location.hash.replace("#","")||"attendance"); });
+
+// ---- helpers ----
+function show(id){ for(const v of ["login","denied","app"]) document.getElementById(v).classList.toggle("hidden", v!==id); }
+function pad(n){ return String(n).padStart(2,"0"); }
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function toLocalInput(ts){ if(!ts) return ""; const d=new Date(ts);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function hhmm(ts){ return ts ? new Date(ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""; }
+function hhmmLocal(t){ if(!t) return ""; const m=String(t).match(/T(\d{2}):(\d{2})/); if(!m) return "";
+  let h=+m[1]; const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${m[2]} ${ap}`; }
+function blockName(t){ const m=String(t||"").match(/T(\d{2})/); const h=m?+m[1]:12;
+  return h<12?"Morning Shift":h<17?"Afternoon Shift":"Night Shift"; }
+const ROLE_ORDER=["SL","AFA","OSR","OSRF"];
+function roleRank(n){ const t=String(n||"").split("-").pop().trim().toUpperCase();
+  const i=ROLE_ORDER.indexOf(t); return i<0?99:i; }
+
+// ---- auth / routing ----
+async function route(){
+  const { data:{ session } } = await db.auth.getSession();
+  if(!session){ show("login"); return; }
+  const email = session.user.email || "(no email)";
+  const { data: ok, error } = await db.rpc("is_admin");
+  if(error || !ok){ document.getElementById("whoemail").textContent = email; show("denied"); return; }
+  let label = email;
+  const { data: me } = await db.rpc("current_admin");
+  if(me && me.name) label = me.name + " (" + email + ")";
+  admin = me || { email };
+  document.getElementById("hello").textContent = label;
+  renderNav();
+  show("app");
+  document.getElementById("attdate").value = todayStr();
+  go(location.hash.replace("#","")||"attendance");
+}
+async function doLogin(){
+  const err=document.getElementById("loginerr"); err.textContent="";
+  const email=document.getElementById("email").value.trim();
+  const password=document.getElementById("pw").value;
+  if(!email||!password){ err.textContent="Enter your email and password."; return; }
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if(error){ err.textContent=error.message; return; }
+  route();
+}
+async function doGoogle(){
+  const err=document.getElementById("loginerr"); err.textContent="";
+  const { error } = await db.auth.signInWithOAuth({ provider:"google",
+    options:{ redirectTo: location.href.split("#")[0] } });
+  if(error) err.textContent = error.message + " (Google sign-in may not be enabled yet.)";
+}
+async function doSignout(){ await db.auth.signOut(); admin=null; route(); }
+
+// ---- attendance ----
+function attToday(){ document.getElementById("attdate").value=todayStr(); loadAttendance(); }
+function attShift(delta){
+  const el=document.getElementById("attdate");
+  const base = el.value ? new Date(el.value+"T00:00:00") : new Date();
+  base.setDate(base.getDate()+delta);
+  el.value = `${base.getFullYear()}-${pad(base.getMonth()+1)}-${pad(base.getDate())}`;
+  loadAttendance();
+}
+async function loadAttendance(){
+  const list=document.getElementById("attlist");
+  const d=document.getElementById("attdate").value;
+  list.innerHTML='<p class="empty">Loading…</p>';
+  const { data, error } = await db.rpc("admin_attendance", { p_date: d||null });
+  if(error){ list.innerHTML=`<p class="empty">${error.message}</p>`; return; }
+  const rows=data||[];
+  document.getElementById("attcount").textContent = `${rows.length} record${rows.length===1?"":"s"}`;
+  if(!rows.length){ list.innerHTML='<div class="card pad"><p class="empty">No sign-ins for this day.</p></div>'; return; }
+  list.innerHTML="";
+
+  // group by shift (time window), order roles within each; records with no shift go last
+  const groups=new Map();
+  for(const r of rows){
+    const key = r.start_ts ? `${r.start_ts}~${r.end_ts}` : "other";
+    if(!groups.has(key)) groups.set(key,{start:r.start_ts||null, rows:[]});
+    groups.get(key).rows.push(r);
+  }
+  const ordered=[...groups.entries()].sort((a,b)=>{
+    if(a[0]==="other") return 1; if(b[0]==="other") return -1;
+    return String(a[1].start||"").localeCompare(String(b[1].start||""));
+  });
+  for(const [key,g] of ordered){
+    const box=document.createElement("div"); box.className="shiftbox";
+    const hd=document.createElement("div"); hd.className="grouphd";
+    if(key==="other"){ hd.textContent="Other / walk-ins"; }
+    else {
+      const start=g.rows[0].start_ts;
+      const timeRange=`${hhmmLocal(start)}–${hhmmLocal(g.rows[0].end_ts)}`;
+      const labels=new Set(g.rows.map(r=>r.shift_label).filter(Boolean));
+      const name=(labels.size===1 && [...labels][0].length<=28) ? [...labels][0] : blockName(start);
+      hd.textContent=`${name} · ${timeRange}`;
+    }
+    box.appendChild(hd);
+    g.rows.sort((a,b)=>{ const d=roleRank(a.position_name)-roleRank(b.position_name);
+                         return d || String(a.name||"").localeCompare(String(b.name||"")); });
+    for(const r of g.rows) box.appendChild(attRow(r));
+    list.appendChild(box);
+  }
+}
+function attRow(r){
+  const div=document.createElement("div"); div.className="arow";
+  let status;
+  if(r.method==="remote") status='<span class="badge b-remote">remote</span>';
+  else if(r.presumed_out){
+    const ended = r.signed_out_at && new Date(r.signed_out_at) < new Date();
+    status = ended ? '<span class="badge b-auto">presumed</span>'
+                   : '<span class="badge b-in">on shift</span>';
+  }
+  else status='<span class="badge b-out">signed out</span>';
+  const sub=[r.position_name, r.shift_label].filter(Boolean).join(" · ");
+  const inT = r.signed_in_at ? `in ${hhmm(r.signed_in_at)}` : "";
+  const prefill = r.signed_out_at ? toLocalInput(r.signed_out_at)
+                : (r.end_ts ? String(r.end_ts).slice(0,16) : toLocalInput(new Date()));
+  div.innerHTML =
+    `<div><div class="nm">${r.name||r.helper_number} ${status}</div>
+       <div class="sub">${sub||"&nbsp;"}</div></div>
+     <div class="sub">${inT}</div>
+     <div class="outset">
+       <input type="datetime-local" value="${prefill}">
+       <button class="save">Save out</button>
+     </div>
+     <div class="rec">
+       <span class="hrs">${r.eligible_hours!=null?r.eligible_hours+" h":"—"}</span>
+       <label class="rec"><input type="checkbox" ${r.hours_recorded?"checked":""}> recorded</label>
+     </div>`;
+  div.querySelector(".save").onclick = async ()=>{
+    const v=div.querySelector('input[type=datetime-local]').value;
+    if(!v) return;
+    const { error } = await db.rpc("admin_fix_signout", { p_id:r.id, p_out:new Date(v).toISOString() });
+    if(error){ alert(error.message); return; }
+    loadAttendance();
+  };
+  div.querySelector('input[type=checkbox]').onchange = async (e)=>{
+    const { error } = await db.from("attendance").update({ hours_recorded:e.target.checked }).eq("id", r.id);
+    if(error){ alert(error.message); e.target.checked=!e.target.checked; }
+  };
+  return div;
+}
+
+// ---- categories ----
+const MODES=["kiosk","remote","ignore","review"];
+async function loadCategories(){
+  const list=document.getElementById("catlist");
+  list.innerHTML='<p class="empty">Loading…</p>';
+  const { data, error } = await db.from("categories").select("cat,name,signin_mode").order("name");
+  if(error){ list.innerHTML=`<p class="empty">${error.message}</p>`; return; }
+  const rows=data||[];
+  if(!rows.length){ list.innerHTML='<p class="empty">No categories yet.</p>'; return; }
+  list.innerHTML="";
+  for(const c of rows){
+    const div=document.createElement("div"); div.className="crow";
+    const opts=MODES.map(m=>`<option value="${m}" ${c.signin_mode===m?"selected":""}>${m}</option>`).join("");
+    div.innerHTML=
+      `<div><div class="nm">${c.name||c.cat}</div><div class="sub">${c.cat}</div></div>
+       <div style="display:flex;align-items:center;gap:10px">
+         <span class="saved">saved</span><select>${opts}</select></div>`;
+    div.querySelector("select").onchange = async (e)=>{
+      const { error } = await db.from("categories").update({ signin_mode:e.target.value }).eq("cat", c.cat);
+      const flag=div.querySelector(".saved");
+      if(error){ alert(error.message); return; }
+      flag.classList.add("show"); setTimeout(()=>flag.classList.remove("show"), 1200);
+    };
+    list.appendChild(div);
+  }
+}
+
+// ---- email settings ----
+const EMAIL_KEYS=["email_from_name","email_from_address","email_reply_to",
+                  "email_subject","email_body_text","email_body_html"];
+async function loadEmail(){
+  const err=document.getElementById("emailerr"); err.textContent="";
+  const { data, error } = await db.from("app_settings").select("key,value");
+  if(error){ err.textContent=error.message; return; }
+  const map={}; (data||[]).forEach(r=>map[r.key]=r.value);
+  for(const k of EMAIL_KEYS){ const el=document.getElementById("set_"+k); if(el) el.value = map[k]||""; }
+}
+async function saveEmail(){
+  const err=document.getElementById("emailerr"); err.textContent="";
+  const rows=EMAIL_KEYS.map(k=>({ key:k, value:document.getElementById("set_"+k).value }));
+  const { error } = await db.from("app_settings").upsert(rows);
+  if(error){ err.textContent=error.message; return; }
+  const flag=document.getElementById("emailsaved");
+  flag.classList.add("show"); setTimeout(()=>flag.classList.remove("show"), 1400);
+}
+
+// ---- coordinators (admins allowlist) ----
+async function loadCoordinators(){
+  const list=document.getElementById("colist");
+  document.getElementById("coerr").textContent="";
+  list.innerHTML='<p class="empty">Loading…</p>';
+  const { data, error } = await db.from("admins").select("email,name,active,added_at").order("name");
+  if(error){ list.innerHTML=`<p class="empty">${error.message}</p>`; return; }
+  const rows=data||[];
+  if(!rows.length){ list.innerHTML='<p class="empty">No coordinators yet.</p>'; return; }
+  list.innerHTML="";
+  const myEmail=((admin&&admin.email)||"").toLowerCase();
+  for(const a of rows){
+    const self = (a.email||"").toLowerCase()===myEmail;
+    const div=document.createElement("div"); div.className="crow";
+    div.innerHTML=
+      `<div><div class="nm">${a.name||a.email}`
+        +`${a.active?"":' <span class="badge b-auto">inactive</span>'}`
+        +`${self?' <span class="badge b-remote">you</span>':''}</div>
+         <div class="sub">${a.email}</div></div>
+       <div style="display:flex;align-items:center;gap:12px">
+         <label class="rec"><input type="checkbox" ${a.active?"checked":""} ${self?"disabled":""}> active</label>
+         <button class="save copw" style="background:#fff;color:var(--alpine);border:1px solid var(--line)">Set password</button>
+         <button class="save corm" ${self?"disabled":""}
+           style="background:#fff;color:var(--red);border:1px solid var(--line)${self?";opacity:.4":""}">Remove</button>
+       </div>`;
+    div.querySelector(".copw").onclick = ()=>setPassword(a.email, a.name);
+    if(!self){
+      div.querySelector('input[type=checkbox]').onchange = async (e)=>{
+        const { error } = await db.from("admins").update({ active:e.target.checked }).eq("email", a.email);
+        if(error){ alert(error.message); e.target.checked=!e.target.checked; return; }
+        loadCoordinators();
+      };
+      div.querySelector(".corm").onclick = async ()=>{
+        if(!confirm(`Remove ${a.name||a.email} from admin access?`)) return;
+        const { error } = await db.from("admins").delete().eq("email", a.email);
+        if(error){ alert(error.message); return; }
+        loadCoordinators();
+      };
+    }
+    list.appendChild(div);
+  }
+}
+async function addCoordinator(){
+  const err=document.getElementById("coerr"); err.textContent="";
+  const name=document.getElementById("co_name").value.trim();
+  const email=document.getElementById("co_email").value.trim().toLowerCase();
+  if(!email){ err.textContent="Enter a login email."; return; }
+  const { error } = await db.from("admins").upsert({ email, name, active:true });
+  if(error){ err.textContent=error.message; return; }
+  document.getElementById("co_name").value=""; document.getElementById("co_email").value="";
+  loadCoordinators();
+}
+
+async function setPassword(email, name){
+  const pw = prompt(`Set a password for ${name||email}\n(at least 6 characters):`);
+  if(pw===null) return;
+  if(pw.length<6){ alert("Password must be at least 6 characters."); return; }
+  const { data, error } = await db.functions.invoke("set-password", { body:{ email, password:pw } });
+  if(error){ alert("Could not set password: "+(error.message||error)); return; }
+  if(data && data.error){ alert("Could not set password: "+data.error); return; }
+  alert(`Password set for ${email}. They can sign in now with email + password.`);
+}
+
+// ---- go ----
+route();
+</script>
+</body>
+</html>

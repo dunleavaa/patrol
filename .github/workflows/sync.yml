@@ -1,0 +1,40 @@
+name: Sync W2H
+
+# Pulls people + shifts from WhenToHelp and loads them into Supabase.
+on:
+  schedule:
+    - cron: "0 */3 * * *"      # every 3 hours (UTC; interval, so tz-independent)
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Optional backfill start date YYYY-MM-DD (blank = today)"
+        required: false
+        default: ""
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Fetch from W2H and load into Supabase
+        working-directory: scripts
+        env:
+          W2H_USER: ${{ secrets.W2H_USER }}
+          W2H_PASS: ${{ secrets.W2H_PASS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "${{ inputs.start }}" ]; then
+            python w2h_fetch_http.py --start "${{ inputs.start }}"
+          else
+            python w2h_fetch_http.py
+          fi
+          python w2h_load.py

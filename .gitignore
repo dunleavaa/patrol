@@ -1,0 +1,10 @@
+# local run artifacts
+downloads/
+model.json
+*.har
+capture_log*.txt
+# python
+__pycache__/
+*.pyc
+# secrets (never commit)
+.env

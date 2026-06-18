@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event sign-in · Frontenac Zone</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
+    --line:#dde4ea; --alpine:#21506a; --go:#157a47; --go-press:#0f5e38;
+    --shadow:0 1px 2px rgba(20,40,60,.06),0 8px 26px rgba(20,40,60,.07);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--snow);color:var(--ink);
+       font:17px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .card{max-width:460px;margin:8vh auto 0;background:var(--surface);
+    border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:30px 26px}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--alpine)}
+  h1{font-size:26px;margin:6px 0 4px}
+  .lead{color:var(--muted);margin:0 0 20px}
+  .event{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:18px 0}
+  .event .ttl{font-weight:700;font-size:19px}
+  .event .row{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:15px}
+  .event .row .k{color:var(--muted)}
+  .btn{font:inherit;font-weight:700;font-size:18px;border:0;border-radius:11px;
+    padding:15px 18px;width:100%;cursor:pointer;background:var(--go);color:#fff}
+  .btn:active{background:var(--go-press)}
+  .btn[disabled]{opacity:.55;cursor:default}
+  .ok{text-align:center;padding:8px 0}
+  .ok .check{width:64px;height:64px;border-radius:50%;background:var(--go);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 14px}
+  .muted{color:var(--muted)}
+  .center{text-align:center}
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="eyebrow">Canadian Ski Patrol · Frontenac Zone</div>
+    <div id="body"><p class="lead" id="status">Loading…</p></div>
+  </div>
+
+<script>
+const SUPABASE_URL = "https://mgnpfgziiwqhfcrkqkqa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_UZw7sVPRN-Q51-zzXW1htQ_2HQwd2t3";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false } });
+
+const token = new URLSearchParams(location.search).get("t");
+const body = document.getElementById("body");
+
+function fmtDate(d){ if(!d) return ""; const x=new Date(d+"T00:00:00");
+  return x.toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"}); }
+function fmtTime(t){ if(!t) return ""; const m=String(t).match(/T(\d{2}):(\d{2})/); if(!m) return "";
+  let h=+m[1]; const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${m[2]} ${ap}`; }
+
+function eventCard(ev){
+  const time = (ev.start_ts||ev.end_ts) ? `${fmtTime(ev.start_ts)}–${fmtTime(ev.end_ts)}` : "";
+  return `<div class="event">
+      <div class="ttl">${ev.shift_label||"Special Event"}</div>
+      ${ev.position_name?`<div class="row"><span class="k">Role</span><span>${ev.position_name}</span></div>`:""}
+      ${ev.shift_date?`<div class="row"><span class="k">Date</span><span>${fmtDate(ev.shift_date)}</span></div>`:""}
+      ${time?`<div class="row"><span class="k">Time</span><span>${time}</span></div>`:""}
+      ${ev.hours!=null?`<div class="row"><span class="k">Credited</span><span>${ev.hours} h</span></div>`:""}
+    </div>`;
+}
+
+function showConfirmed(ev, hrs){
+  body.innerHTML = `<div class="ok">
+      <div class="check">✓</div>
+      <h1>You're signed in</h1>
+      <p class="lead">Thanks${ev&&ev.name?`, ${ev.name.split(" ")[0]}`:""} — your ${hrs!=null?hrs+" hours have":"hours have"} been recorded.</p>
+    </div>${ev?eventCard(ev):""}`;
+}
+
+async function start(){
+  const status=document.getElementById("status");
+  if(!token){ status.textContent="This link is missing its code. Please use the link from your email."; return; }
+
+  let ev;
+  try{
+    const { data, error } = await db.rpc("remote_resolve", { p_token: token });
+    if(error) throw error;
+    ev = Array.isArray(data) ? data[0] : data;
+  }catch(e){ ev=null; }
+
+  if(!ev){ status.textContent="This link is invalid or has expired. Please contact your coordinator."; return; }
+
+  if(ev.confirmed){ showConfirmed(ev, ev.hours); return; }
+
+  body.innerHTML =
+    `<h1>Hi${ev.name?`, ${ev.name.split(" ")[0]}`:""}</h1>
+     <p class="lead">Confirm you're on for this event and we'll record your hours.</p>
+     ${eventCard(ev)}
+     <button class="btn" id="go">Sign me in</button>
+     <p class="center muted" style="font-size:13px;margin:14px 0 0">Tap once — you don't need to sign out.</p>`;
+
+  document.getElementById("go").onclick = async (e)=>{
+    const btn=e.target; btn.disabled=true; btn.textContent="Signing in…";
+    try{
+      const { data, error } = await db.rpc("remote_confirm", { p_token: token });
+      if(error) throw error;
+      showConfirmed(ev, data);
+    }catch(err){
+      btn.disabled=false; btn.textContent="Sign me in";
+      const p=document.createElement("p"); p.className="center muted"; p.style.color="#c8102e";
+      p.textContent="Something went wrong — please try again."; body.appendChild(p);
+    }
+  };
+}
+start();
+</script>
+</body>
+</html>

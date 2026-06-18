@@ -1,0 +1,42 @@
+name: Send invites
+
+# Emails remote-event sign-in links for shifts starting soon.
+# The script only sends to shifts inside its time window that haven't been
+# invited yet, so polling every 10 minutes never double-sends.
+on:
+  schedule:
+    - cron: "*/10 * * * *"     # every 10 minutes
+  workflow_dispatch:
+    inputs:
+      shift:
+        description: "Optional shift id to force-send now (testing)"
+        required: false
+        default: ""
+
+concurrency:
+  group: invites
+  cancel-in-progress: false
+
+jobs:
+  invites:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Send due invites
+        working-directory: scripts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+        run: |
+          if [ -n "${{ inputs.shift }}" ]; then
+            python send_invites.py --shift "${{ inputs.shift }}"
+          else
+            python send_invites.py
+          fi
