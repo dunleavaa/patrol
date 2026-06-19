@@ -64,12 +64,43 @@ function eventCard(ev){
     </div>`;
 }
 
-function showConfirmed(ev, hrs){
+function errLine(msg){
+  const p=document.createElement("p"); p.className="center muted";
+  p.style.color="#c8102e"; p.style.marginTop="12px"; p.textContent=msg; body.appendChild(p);
+}
+
+function renderSignedIn(ev){
+  const first = ev && ev.name ? `, ${ev.name.split(" ")[0]}` : "";
   body.innerHTML = `<div class="ok">
       <div class="check">✓</div>
       <h1>You're signed in</h1>
-      <p class="lead">Thanks${ev&&ev.name?`, ${ev.name.split(" ")[0]}`:""} — your ${hrs!=null?hrs+" hours have":"hours have"} been recorded.</p>
-    </div>${ev?eventCard(ev):""}`;
+      <p class="lead">Thanks${first} — you're checked in for this event.</p>
+    </div>
+    ${eventCard(ev)}
+    <button class="btn" id="out" style="background:var(--alpine)">Sign out</button>
+    <p class="center muted" style="font-size:13px;margin:14px 0 0">
+      Tap <b>Sign out</b> when you leave to log your actual hours. If you don't,
+      you'll be credited the scheduled ${ev&&ev.hours!=null?ev.hours+" h":"hours"}.</p>`;
+  document.getElementById("out").onclick = async (e)=>{
+    const btn=e.target; btn.disabled=true; btn.textContent="Signing out…";
+    try{
+      const { data, error } = await db.rpc("remote_sign_out", { p_token: token });
+      if(error) throw error;
+      renderSignedOut(ev, data);
+    }catch(err){
+      btn.disabled=false; btn.textContent="Sign out";
+      errLine("Something went wrong — please try again.");
+    }
+  };
+}
+
+function renderSignedOut(ev, hrs){
+  const first = ev && ev.name ? `, ${ev.name.split(" ")[0]}` : "";
+  body.innerHTML = `<div class="ok">
+      <div class="check">✓</div>
+      <h1>Signed out</h1>
+      <p class="lead">Thanks${first} — ${hrs!=null?hrs+" hours have":"your hours have"} been recorded.</p>
+    </div>${eventCard(ev)}`;
 }
 
 async function start(){
@@ -85,25 +116,25 @@ async function start(){
 
   if(!ev){ status.textContent="This link is invalid or has expired. Please contact your coordinator."; return; }
 
-  if(ev.confirmed){ showConfirmed(ev, ev.hours); return; }
+  if(ev.signed_out){ renderSignedOut(ev, ev.recorded_hours!=null?ev.recorded_hours:ev.hours); return; }
+  if(ev.confirmed){ renderSignedIn(ev); return; }
 
   body.innerHTML =
     `<h1>Hi${ev.name?`, ${ev.name.split(" ")[0]}`:""}</h1>
      <p class="lead">Confirm you're on for this event and we'll record your hours.</p>
      ${eventCard(ev)}
      <button class="btn" id="go">Sign me in</button>
-     <p class="center muted" style="font-size:13px;margin:14px 0 0">Tap once — you don't need to sign out.</p>`;
+     <p class="center muted" style="font-size:13px;margin:14px 0 0">You can sign out later to log your actual hours.</p>`;
 
   document.getElementById("go").onclick = async (e)=>{
     const btn=e.target; btn.disabled=true; btn.textContent="Signing in…";
     try{
-      const { data, error } = await db.rpc("remote_confirm", { p_token: token });
+      const { error } = await db.rpc("remote_confirm", { p_token: token });
       if(error) throw error;
-      showConfirmed(ev, data);
+      renderSignedIn(ev);
     }catch(err){
       btn.disabled=false; btn.textContent="Sign me in";
-      const p=document.createElement("p"); p.className="center muted"; p.style.color="#c8102e";
-      p.textContent="Something went wrong — please try again."; body.appendChild(p);
+      errLine("Something went wrong — please try again.");
     }
   };
 }
