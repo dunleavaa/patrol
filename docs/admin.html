@@ -280,6 +280,7 @@
         <div class="toolbar">
           <button class="ghost" onclick="loadSync()">Refresh</button>
           <button class="ghost" onclick="exportSync()">Export CSV</button>
+          <label class="rec" style="gap:6px"><input type="checkbox" id="synconlyfail" onchange="applySyncFilter()"> Show only failures</label>
           <span class="count" id="syncsummary"></span>
         </div>
         <div id="synctable"></div>
@@ -290,6 +291,7 @@
         <div class="toolbar">
           <button class="ghost" onclick="loadEmailLog()">Refresh</button>
           <button class="ghost" onclick="exportEmailLog()">Export CSV</button>
+          <label class="rec" style="gap:6px"><input type="checkbox" id="emailonlyfail" onchange="applyEmailFilter()"> Show only failures</label>
           <span class="count" id="emailsummary"></span>
         </div>
         <div id="emailtable"></div>
@@ -326,7 +328,7 @@ function renderNav(){
     if(sec.title){
       const h=document.createElement("h3"); h.tabIndex=0;
       h.innerHTML=`<span>${sec.title}</span><span class="chev">\u25BE</span>`;
-      if(collapsed[sec.title]) box.classList.add("collapsed");
+      if(collapsed[sec.title] !== false) box.classList.add("collapsed");
       const toggle=()=>{
         box.classList.toggle("collapsed");
         collapsed[sec.title]=box.classList.contains("collapsed");
@@ -694,15 +696,15 @@ async function loadShifts(){
         formatter:c=>{ const r=c.getRow().getData();
           const a=hhmmLocal(r.start_ts), b=hhmmLocal(r.end_ts);
           return a ? (b?`${a}–${b}`:a) : "—"; } },
-      { title:"Person",   field:"person",      sorter:"string", widthGrow:2, headerFilter:"input",
+      { title:"Person",   field:"person",      sorter:"string", widthGrow:2, minWidth:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
-      { title:"Role",     field:"role",        sorter:"string", width:120, headerFilter:"input",
+      { title:"Role",     field:"role",        sorter:"string", minWidth:90, width:110, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
-      { title:"Category", field:"category",    sorter:"string", width:150, headerFilter:"input",
+      { title:"Category", field:"category",    sorter:"string", widthGrow:1, minWidth:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
-      { title:"Event / location", field:"description", sorter:"string", widthGrow:2, headerFilter:"input",
+      { title:"Event / location", field:"description", sorter:"string", widthGrow:3, minWidth:200, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
-      { title:"Status", field:"cancelled", hozAlign:"center", width:120,
+      { title:"Status", field:"cancelled", hozAlign:"center", width:110,
         formatter:c=> c.getValue() ? '<span class="badge b-auto">cancelled</span>' : '<span class="badge b-out">active</span>' },
     ],
   });
@@ -743,7 +745,7 @@ async function loadSync(){
     sum.textContent="No sync runs recorded yet.";
   }
 
-  if(syncTable){ syncTable.replaceData(rows); return; }
+  if(syncTable){ syncTable.replaceData(rows).then(applySyncFilter); return; }
   syncTable = new Tabulator("#synctable", {
     data: rows,
     layout: "fitColumns",
@@ -767,6 +769,12 @@ async function loadSync(){
         formatter:c=> c.getValue() || "—" },
     ],
   });
+  applySyncFilter();
+}
+function applySyncFilter(){
+  if(!syncTable) return;
+  if(document.getElementById("synconlyfail").checked) syncTable.setFilter("ok","=",false);
+  else syncTable.clearFilter();
 }
 function exportSync(){
   if(syncTable) syncTable.download("csv", "sync-log.csv");
@@ -794,7 +802,7 @@ async function loadEmailLog(){
     sum.textContent="No emails sent yet.";
   }
 
-  if(emailTable){ emailTable.replaceData(rows); return; }
+  if(emailTable){ emailTable.replaceData(rows).then(applyEmailFilter); return; }
   emailTable = new Tabulator("#emailtable", {
     data: rows,
     layout: "fitColumns",
@@ -819,6 +827,12 @@ async function loadEmailLog(){
         formatter:c=>c.getValue()||"—" },
     ],
   });
+  applyEmailFilter();
+}
+function applyEmailFilter(){
+  if(!emailTable) return;
+  if(document.getElementById("emailonlyfail").checked) emailTable.setFilter("status","!=","sent");
+  else emailTable.clearFilter();
 }
 function exportEmailLog(){
   if(emailTable) emailTable.download("csv", "email-log.csv");
