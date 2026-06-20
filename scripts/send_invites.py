@@ -145,6 +145,18 @@ def send_email(to_email, to_name, subject, text, html, from_name, from_addr, rep
         s.send_message(msg)
 
 
+def log_email(cur, conn, to_email, subject, shift_id, status, error=None):
+    """Record a send attempt (success or failure) in email_log. Best-effort."""
+    try:
+        cur.execute(
+            "insert into email_log (to_email, subject, shift_id, kind, status, error) "
+            "values (%s, %s, %s, 'invite', %s, %s)",
+            (to_email, subject, shift_id, status, (str(error)[:500] if error else None)))
+        conn.commit()
+    except Exception as e:
+        print(f"  (could not write email_log: {e})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shift", help="force-send for one shift id (ignores timing)")
@@ -194,16 +206,19 @@ def main():
                     "link": link,
                     "from_name": from_name,
                 }
+                subj = fill(t_subject, repl)
                 try:
                     send_email(email, name,
-                               fill(t_subject, repl), fill(t_text, repl), fill(t_html, repl),
+                               subj, fill(t_text, repl), fill(t_html, repl),
                                from_name, from_addr, reply_to)
                 except Exception as e:
                     print(f"  send FAILED for {name} <{email}>: {e}")
+                    log_email(cur, conn, email, subj, shift_id, "failed", e)
                     skipped += 1
                     continue
                 cur.execute("update remote_invites set sent_at = now() where token = %s", (token,))
                 conn.commit()
+                log_email(cur, conn, email, subj, shift_id, "sent")
                 print(f"  sent to {name} <{email}> · {desc}")
                 sent += 1
 

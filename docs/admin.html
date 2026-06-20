@@ -49,7 +49,12 @@
   .side{flex:0 0 208px;position:sticky;top:62px}
   .navsec{margin-bottom:15px}
   .navsec h3{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--muted);margin:0 0 6px 10px}
+    color:var(--muted);margin:0 0 6px 10px;display:flex;align-items:center;justify-content:space-between;
+    cursor:pointer;user-select:none}
+  .navsec h3:hover{color:var(--ink)}
+  .navsec h3 .chev{font-size:9px;margin-left:6px;transition:transform .15s}
+  .navsec.collapsed h3 .chev{transform:rotate(-90deg)}
+  .navsec.collapsed .navitem{display:none}
   .navitem{display:block;padding:9px 12px;border-radius:9px;color:var(--ink);font-weight:600;
     font-size:15px;cursor:pointer;text-decoration:none}
   .navitem:hover{background:var(--snow)}
@@ -103,6 +108,7 @@
     .layout{flex-direction:column;gap:14px}
     .side{position:static;flex:auto;display:flex;flex-wrap:wrap;gap:6px;width:100%}
     .navsec{margin:0} .navsec h3{display:none}
+    .navsec.collapsed .navitem{display:block}
   }
 
   /* Tabulator — themed to match the admin cards */
@@ -279,6 +285,16 @@
         <div id="synctable"></div>
       </section>
 
+      <section id="view-emaillog" class="hidden">
+        <h2 class="vtitle">Email log</h2>
+        <div class="toolbar">
+          <button class="ghost" onclick="loadEmailLog()">Refresh</button>
+          <button class="ghost" onclick="exportEmailLog()">Export CSV</button>
+          <span class="count" id="emailsummary"></span>
+        </div>
+        <div id="emailtable"></div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -296,15 +312,30 @@ const NAV = [
   { title:null,         items:[["reports","Reports"]] },
   { title:"Records",    items:[["people","People"],["shifts","Shifts"]] },
   { title:"Setup",      items:[["categories","Categories"],["email","Email & messages"],
-                               ["coordinators","Coordinators"],["sync","Sync"]] },
+                               ["coordinators","Coordinators"]] },
+  { title:"System Logs", items:[["sync","Sync"],["emaillog","Email"]] },
 ];
 const VIEWS = NAV.flatMap(s=>s.items.map(i=>i[0]));
 
 function renderNav(){
   const side=document.getElementById("side"); side.innerHTML="";
+  let collapsed={};
+  try{ collapsed=JSON.parse(localStorage.getItem("navCollapsed")||"{}"); }catch(e){}
   for(const sec of NAV){
     const box=document.createElement("div"); box.className="navsec";
-    if(sec.title){ const h=document.createElement("h3"); h.textContent=sec.title; box.appendChild(h); }
+    if(sec.title){
+      const h=document.createElement("h3"); h.tabIndex=0;
+      h.innerHTML=`<span>${sec.title}</span><span class="chev">\u25BE</span>`;
+      if(collapsed[sec.title]) box.classList.add("collapsed");
+      const toggle=()=>{
+        box.classList.toggle("collapsed");
+        collapsed[sec.title]=box.classList.contains("collapsed");
+        try{ localStorage.setItem("navCollapsed", JSON.stringify(collapsed)); }catch(e){}
+      };
+      h.addEventListener("click", toggle);
+      h.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } });
+      box.appendChild(h);
+    }
     for(const [id,label] of sec.items){
       const a=document.createElement("a"); a.className="navitem"; a.dataset.v=id;
       a.textContent=label; a.href="#"+id;
@@ -325,6 +356,7 @@ function go(id){
   else if(id==="people") loadPeople();
   else if(id==="shifts") loadShifts();
   else if(id==="sync") loadSync();
+  else if(id==="emaillog") loadEmailLog();
 }
 window.addEventListener("hashchange", ()=>{ if(admin) go(location.hash.replace("#","")||"attendance"); });
 
@@ -738,6 +770,58 @@ async function loadSync(){
 }
 function exportSync(){
   if(syncTable) syncTable.download("csv", "sync-log.csv");
+}
+
+// ---- email log ----
+let emailTable=null;
+async function loadEmailLog(){
+  const sum=document.getElementById("emailsummary");
+  sum.textContent="Loading…";
+  const { data, error } = await db.from("email_log")
+    .select("created_at,to_email,subject,shift_id,status,error")
+    .order("created_at", { ascending:false })
+    .limit(1000);
+  if(error){ sum.textContent=error.message; return; }
+  const rows=data||[];
+
+  if(rows.length){
+    const last=rows[0];
+    const fails=rows.filter(r=>r.status!=="sent").length;
+    sum.innerHTML =
+      `Last email ${fmtSyncWhen(last.created_at)} · ${rows.length} shown` +
+      (fails ? ` · <span class="badge b-in">${fails} failed</span>` : "");
+  } else {
+    sum.textContent="No emails sent yet.";
+  }
+
+  if(emailTable){ emailTable.replaceData(rows); return; }
+  emailTable = new Tabulator("#emailtable", {
+    data: rows,
+    layout: "fitColumns",
+    height: "560px",
+    pagination: true,
+    paginationSize: 25,
+    paginationSizeSelector: [10,25,50,100],
+    placeholder: "No emails sent yet.",
+    initialSort: [{ column:"created_at", dir:"desc" }],
+    columns: [
+      { title:"When", field:"created_at", sorter:"string", widthGrow:2, minWidth:150,
+        formatter:c=>fmtSyncWhen(c.getValue()) },
+      { title:"To", field:"to_email", sorter:"string", widthGrow:2, minWidth:170,
+        formatter:c=>c.getValue()||"—" },
+      { title:"Subject", field:"subject", sorter:"string", widthGrow:3, minWidth:180,
+        formatter:c=>c.getValue()||"—" },
+      { title:"Status", field:"status", hozAlign:"center", width:110,
+        formatter:c=> c.getValue()==="sent"
+          ? '<span class="badge b-out">sent</span>'
+          : '<span class="badge b-in">failed</span>' },
+      { title:"Detail", field:"error", sorter:"string", widthGrow:2, minWidth:140,
+        formatter:c=>c.getValue()||"—" },
+    ],
+  });
+}
+function exportEmailLog(){
+  if(emailTable) emailTable.download("csv", "email-log.csv");
 }
 
 // ---- go ----
