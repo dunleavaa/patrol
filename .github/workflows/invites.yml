@@ -38,5 +38,5 @@ jobs:
           if [ -n "${{ inputs.shift }}" ]; then
             python send_invites.py --shift "${{ inputs.shift }}"
           else
-            python send_invites.py
+            python send_invites.py --day-of
           fi

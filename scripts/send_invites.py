@@ -50,7 +50,7 @@ def load_settings(cur):
     return {k: v for k, v in cur.fetchall()}
 
 
-def candidates(cur, shift_id, lead, grace):
+def candidates(cur, shift_id, lead, grace, day_of=False):
     if shift_id:
         cur.execute(
             """select s.shift_id, s.helper_number, p.name, p.email, s.description,
@@ -59,6 +59,25 @@ def candidates(cur, shift_id, lead, grace):
                  left join people p on p.helper_number = s.helper_number
                 where s.shift_id = %s""",
             (shift_id,),
+        )
+    elif day_of:
+        # Every remote shift happening today (local) that hasn't ended yet and
+        # hasn't been invited. The first run of the day sends them all; dedup
+        # via sent_at keeps later runs from resending. Robust to scheduler gaps.
+        cur.execute(
+            """select s.shift_id, s.helper_number, p.name, p.email, s.description,
+                      s.start_ts, s.end_ts
+                 from shifts s
+                 join categories c on c.cat = s.cat and c.signin_mode = 'remote'
+                 left join people p on p.helper_number = s.helper_number
+                where not s.cancelled
+                  and s.shift_date = (now() at time zone 'America/Toronto')::date
+                  and (s.end_ts at time zone 'America/Toronto') >= now()
+                  and not exists (
+                        select 1 from remote_invites ri
+                         where ri.shift_id = s.shift_id
+                           and ri.helper_number = s.helper_number
+                           and ri.sent_at is not null)"""
         )
     else:
         cur.execute(
@@ -163,6 +182,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="list only; send and write nothing")
     ap.add_argument("--lead", type=int, default=15, help="minutes before start to send (default 15)")
     ap.add_argument("--grace", type=int, default=30, help="also catch starts up to N min ago (default 30)")
+    ap.add_argument("--day-of", dest="day_of", action="store_true",
+                    help="send every remote shift happening today (ignores lead/grace)")
     args = ap.parse_args()
 
     if not DB:
@@ -183,7 +204,7 @@ def main():
             t_text    = cfg.get("email_body_text") or DEFAULT_TEXT
             t_html    = cfg.get("email_body_html") or DEFAULT_HTML
 
-            rows = candidates(cur, args.shift, args.lead, args.grace)
+            rows = candidates(cur, args.shift, args.lead, args.grace, args.day_of)
             if not rows:
                 print("No events to invite right now.")
                 return
