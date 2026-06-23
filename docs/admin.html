@@ -76,6 +76,9 @@
   .grouphd{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--alpine);margin:11px 14px 5px}
   .grouphd::after{content:"";flex:1;height:1px;background:var(--line)}
   .grouphd + .arow{border-top:0}
+  .subhd{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--muted);background:var(--snow);padding:5px 16px;border-top:1px solid var(--line)}
+  .subhd + .arow{border-top:0}
   .nm{font-weight:600}
   .sub{font-size:12.5px;color:var(--muted)}
   .badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
@@ -373,9 +376,22 @@ function hhmmLocal(t){ if(!t) return ""; const m=String(t).match(/T(\d{2}):(\d{2
   let h=+m[1]; const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${m[2]} ${ap}`; }
 function blockName(t){ const m=String(t||"").match(/T(\d{2})/); const h=m?+m[1]:12;
   return h<12?"Morning Shift":h<17?"Afternoon Shift":"Night Shift"; }
-const ROLE_ORDER=["SL","AFA","OSR","OSRF"];
-function roleRank(n){ const t=String(n||"").split("-").pop().trim().toUpperCase();
-  const i=ROLE_ORDER.indexOf(t); return i<0?99:i; }
+// Patrol role ordering for attendance: leaders first, trainees last. Recognizes
+// both the short codes ("Batawa - SL") and the spelled-out names ("Shift Leader",
+// "On Snow Rescue Training") since attendance rows show the friendly name.
+const ROLE_ORDER=["SL","AFA","OSR","OSRF","OSRT"];
+function roleCode(n){
+  const s=String(n||"").toUpperCase();
+  const code=s.split("-").pop().trim();                 // "BATAWA - SL" -> "SL"
+  if(ROLE_ORDER.includes(code)) return code;
+  // friendly names — check most specific first so OSR doesn't swallow OSRF/OSRT
+  if(s.includes("SHIFT LEADER"))                         return "SL";
+  if(s.includes("RESCUE TRAINING") || s.includes("OSR TRAINING")) return "OSRT";
+  if(s.includes("RESCUE FIRST")    || s.includes("OSR FIRST"))    return "OSRF";
+  if(s.includes("ON SNOW RESCUE"))                       return "OSR";
+  return "";
+}
+function roleRank(n){ const i=ROLE_ORDER.indexOf(roleCode(n)); return i<0?99:i; }
 
 // ---- auth / routing ----
 async function route(){
@@ -431,11 +447,14 @@ async function loadAttendance(){
   if(!rows.length){ list.innerHTML='<div class="card pad"><p class="empty">No sign-ins for this day.</p></div>'; return; }
   list.innerHTML="";
 
-  // Group by EVENT (shift_label) when present, else by time window; "other" last.
-  // Within a group, order by start time, then role, then name.
+  // Two-level grouping: EVENT / label (outer) → SHIFT time-window (inner).
+  // For special events the label is the event name and a day can hold several
+  // shift windows; for Batawa the label is the shift name itself ("Morning
+  // Shift") with one window. When a group has a single window we fold the time
+  // into the event header; when it has several we show each as a sub-header.
   const groups=new Map();
   for(const r of rows){
-    const key = r.shift_label ? `ev:${r.shift_label}`
+    const key = r.shift_label ? `lbl:${r.shift_label}`
               : (r.start_ts ? `tw:${r.start_ts}~${r.end_ts}` : "other");
     if(!groups.has(key)) groups.set(key,{label:r.shift_label||null, start:r.start_ts||null, rows:[]});
     const g=groups.get(key);
@@ -446,30 +465,46 @@ async function loadAttendance(){
     if(a[0]==="other") return 1; if(b[0]==="other") return -1;
     return String(a[1].start||"").localeCompare(String(b[1].start||""));
   });
+
+  const sortRows=(arr)=>arr.sort((a,b)=>{
+    const d=roleRank(a.position_name)-roleRank(b.position_name);
+    return d || String(a.name||"").localeCompare(String(b.name||""));
+  });
+
   for(const [key,g] of ordered){
     const box=document.createElement("div"); box.className="shiftbox";
+
+    // distinct shift windows within this group, ordered by start
+    const wins=new Map();
+    for(const r of g.rows){
+      const wk=r.start_ts ? `${r.start_ts}~${r.end_ts}` : "none";
+      if(!wins.has(wk)) wins.set(wk,{start:r.start_ts||null,end:r.end_ts||null,rows:[]});
+      wins.get(wk).rows.push(r);
+    }
+    const winList=[...wins.values()].sort((a,b)=>String(a.start||"").localeCompare(String(b.start||"")));
+    const single = winList.length===1;
+
+    // outer header
     const hd=document.createElement("div"); hd.className="grouphd";
     if(key==="other"){ hd.textContent="Other / walk-ins"; }
     else if(g.label){
-      // Event group: show the event name; append the time range only when every
-      // row shares one window (otherwise each row shows its own time).
-      const windows=new Set(g.rows.map(r=>`${r.start_ts}~${r.end_ts}`));
-      const first=g.rows.find(r=>r.start_ts);
-      hd.textContent = (windows.size===1 && first)
-        ? `${g.label} · ${hhmmLocal(first.start_ts)}–${hhmmLocal(first.end_ts)}`
-        : g.label;
+      const w=winList[0];
+      hd.textContent = (single && w.start) ? `${g.label} · ${hhmmLocal(w.start)}–${hhmmLocal(w.end)}` : g.label;
     } else {
-      const start=g.rows[0].start_ts;
-      hd.textContent=`${blockName(start)} · ${hhmmLocal(start)}–${hhmmLocal(g.rows[0].end_ts)}`;
+      const w=winList[0];
+      hd.textContent = `${blockName(w.start)} · ${hhmmLocal(w.start)}–${hhmmLocal(w.end)}`;
     }
     box.appendChild(hd);
-    g.rows.sort((a,b)=>{
-      const t=String(a.start_ts||"").localeCompare(String(b.start_ts||""));
-      if(t) return t;
-      const d=roleRank(a.position_name)-roleRank(b.position_name);
-      return d || String(a.name||"").localeCompare(String(b.name||""));
-    });
-    for(const r of g.rows) box.appendChild(attRow(r));
+
+    // shift windows
+    for(const w of winList){
+      if(!single){
+        const sh=document.createElement("div"); sh.className="subhd";
+        sh.textContent = w.start ? `${hhmmLocal(w.start)}–${hhmmLocal(w.end)}` : "No set time";
+        box.appendChild(sh);
+      }
+      for(const r of sortRows(w.rows)) box.appendChild(attRow(r));
+    }
     list.appendChild(box);
   }
 }
@@ -483,8 +518,7 @@ function attRow(r){
                    : '<span class="badge b-in">on shift</span>';
   }
   else status='<span class="badge b-out">signed out</span>';
-  const tw  = r.start_ts ? `${hhmmLocal(r.start_ts)}–${hhmmLocal(r.end_ts)}` : "";
-  const sub=[r.position_name, tw].filter(Boolean).join(" · ");
+  const sub = r.position_name || "";
   const inT = r.signed_in_at ? `in ${hhmm(r.signed_in_at)}` : "";
   const prefill = r.signed_out_at ? toLocalInput(r.signed_out_at)
                 : (r.end_ts ? String(r.end_ts).slice(0,16) : toLocalInput(new Date()));
