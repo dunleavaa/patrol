@@ -66,18 +66,18 @@
   .toolbar input[type=date]{width:auto}
   .count{color:var(--muted);font-size:14px;margin-left:auto}
 
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
     box-shadow:var(--shadow);overflow:hidden}
-  .pad{padding:20px 22px}
-  .arow{display:grid;grid-template-columns:1.4fr 1fr 1.2fr auto;gap:14px;align-items:center;
-    padding:13px 16px;border-top:1px solid var(--line)}
+  .pad{padding:14px 16px}
+  .arow{display:grid;grid-template-columns:1.5fr 0.8fr 1.2fr auto;gap:12px;align-items:center;
+    padding:8px 14px;border-top:1px solid var(--line)}
   .arow:first-child{border-top:0}
-  .shiftbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
-  .grouphd{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--alpine);margin:14px 16px 6px}
+  .shiftbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:12px}
+  .grouphd{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--alpine);margin:11px 14px 5px}
   .grouphd::after{content:"";flex:1;height:1px;background:var(--line)}
   .grouphd + .arow{border-top:0}
   .nm{font-weight:600}
-  .sub{font-size:13px;color:var(--muted)}
+  .sub{font-size:12.5px;color:var(--muted)}
   .badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
     padding:2px 8px;border-radius:999px;vertical-align:middle}
   .b-in{background:#fdeaea;color:var(--red)}
@@ -85,8 +85,8 @@
   .b-auto{background:#fff3e0;color:#9a5b00}
   .b-remote{background:#e9eef3;color:var(--alpine)}
   .outset{display:flex;gap:8px;align-items:center}
-  .outset input{width:200px}
-  .save{background:var(--alpine);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+  .outset input{width:172px}
+  .save{background:var(--alpine);color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit;font-size:13px;font-weight:600;white-space:nowrap}
   .rec{display:flex;gap:7px;align-items:center;font-size:13px;color:var(--muted);white-space:nowrap}
   .hrs{font-weight:700}
   .empty{color:var(--muted);text-align:center;padding:34px}
@@ -431,12 +431,16 @@ async function loadAttendance(){
   if(!rows.length){ list.innerHTML='<div class="card pad"><p class="empty">No sign-ins for this day.</p></div>'; return; }
   list.innerHTML="";
 
-  // group by shift (time window), order roles within each; records with no shift go last
+  // Group by EVENT (shift_label) when present, else by time window; "other" last.
+  // Within a group, order by start time, then role, then name.
   const groups=new Map();
   for(const r of rows){
-    const key = r.start_ts ? `${r.start_ts}~${r.end_ts}` : "other";
-    if(!groups.has(key)) groups.set(key,{start:r.start_ts||null, rows:[]});
-    groups.get(key).rows.push(r);
+    const key = r.shift_label ? `ev:${r.shift_label}`
+              : (r.start_ts ? `tw:${r.start_ts}~${r.end_ts}` : "other");
+    if(!groups.has(key)) groups.set(key,{label:r.shift_label||null, start:r.start_ts||null, rows:[]});
+    const g=groups.get(key);
+    g.rows.push(r);
+    if(r.start_ts && (!g.start || String(r.start_ts) < String(g.start))) g.start=r.start_ts;
   }
   const ordered=[...groups.entries()].sort((a,b)=>{
     if(a[0]==="other") return 1; if(b[0]==="other") return -1;
@@ -446,16 +450,25 @@ async function loadAttendance(){
     const box=document.createElement("div"); box.className="shiftbox";
     const hd=document.createElement("div"); hd.className="grouphd";
     if(key==="other"){ hd.textContent="Other / walk-ins"; }
-    else {
+    else if(g.label){
+      // Event group: show the event name; append the time range only when every
+      // row shares one window (otherwise each row shows its own time).
+      const windows=new Set(g.rows.map(r=>`${r.start_ts}~${r.end_ts}`));
+      const first=g.rows.find(r=>r.start_ts);
+      hd.textContent = (windows.size===1 && first)
+        ? `${g.label} · ${hhmmLocal(first.start_ts)}–${hhmmLocal(first.end_ts)}`
+        : g.label;
+    } else {
       const start=g.rows[0].start_ts;
-      const timeRange=`${hhmmLocal(start)}–${hhmmLocal(g.rows[0].end_ts)}`;
-      const labels=new Set(g.rows.map(r=>r.shift_label).filter(Boolean));
-      const name=(labels.size===1 && [...labels][0].length<=28) ? [...labels][0] : blockName(start);
-      hd.textContent=`${name} · ${timeRange}`;
+      hd.textContent=`${blockName(start)} · ${hhmmLocal(start)}–${hhmmLocal(g.rows[0].end_ts)}`;
     }
     box.appendChild(hd);
-    g.rows.sort((a,b)=>{ const d=roleRank(a.position_name)-roleRank(b.position_name);
-                         return d || String(a.name||"").localeCompare(String(b.name||"")); });
+    g.rows.sort((a,b)=>{
+      const t=String(a.start_ts||"").localeCompare(String(b.start_ts||""));
+      if(t) return t;
+      const d=roleRank(a.position_name)-roleRank(b.position_name);
+      return d || String(a.name||"").localeCompare(String(b.name||""));
+    });
     for(const r of g.rows) box.appendChild(attRow(r));
     list.appendChild(box);
   }
@@ -470,7 +483,8 @@ function attRow(r){
                    : '<span class="badge b-in">on shift</span>';
   }
   else status='<span class="badge b-out">signed out</span>';
-  const sub=[r.position_name, r.shift_label].filter(Boolean).join(" · ");
+  const tw  = r.start_ts ? `${hhmmLocal(r.start_ts)}–${hhmmLocal(r.end_ts)}` : "";
+  const sub=[r.position_name, tw].filter(Boolean).join(" · ");
   const inT = r.signed_in_at ? `in ${hhmm(r.signed_in_at)}` : "";
   const prefill = r.signed_out_at ? toLocalInput(r.signed_out_at)
                 : (r.end_ts ? String(r.end_ts).slice(0,16) : toLocalInput(new Date()));
