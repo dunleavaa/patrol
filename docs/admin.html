@@ -69,7 +69,7 @@
   .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
     box-shadow:var(--shadow);overflow:hidden}
   .pad{padding:14px 16px}
-  .arow{display:grid;grid-template-columns:1.5fr 0.8fr 1.2fr auto;gap:12px;align-items:center;
+  .arow{display:grid;grid-template-columns:1.9fr 0.8fr 0.9fr auto;gap:12px;align-items:center;
     padding:8px 14px;border-top:1px solid var(--line)}
   .arow:first-child{border-top:0}
   .shiftbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:12px}
@@ -88,7 +88,13 @@
   .b-auto{background:#fff3e0;color:#9a5b00}
   .b-remote{background:#e9eef3;color:var(--alpine)}
   .outset{display:flex;gap:8px;align-items:center}
-  .outset input{width:172px}
+  .outshow{display:flex;gap:6px;align-items:center}
+  .outtime{font-size:13px;color:var(--ink);white-space:nowrap}
+  .outedit{display:flex;gap:6px;align-items:center}
+  .outedit input{width:158px}
+  .iconbtn{background:none;border:0;cursor:pointer;color:var(--alpine);font-size:15px;line-height:1;
+    padding:4px 6px;border-radius:6px}
+  .iconbtn:hover{background:var(--snow)}
   .save{background:var(--alpine);color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit;font-size:13px;font-weight:600;white-space:nowrap}
   .rec{display:flex;gap:7px;align-items:center;font-size:13px;color:var(--muted);white-space:nowrap}
   .hrs{font-weight:700}
@@ -522,18 +528,34 @@ function attRow(r){
   const inT = r.signed_in_at ? `in ${hhmm(r.signed_in_at)}` : "";
   const prefill = r.signed_out_at ? toLocalInput(r.signed_out_at)
                 : (r.end_ts ? String(r.end_ts).slice(0,16) : toLocalInput(new Date()));
+  const outLabel = r.signed_out_at ? `out ${hhmm(r.signed_out_at)}` : "—";
   div.innerHTML =
     `<div><div class="nm">${r.name||r.helper_number} ${status}</div>
        <div class="sub">${sub||"&nbsp;"}</div></div>
      <div class="sub">${inT}</div>
      <div class="outset">
-       <input type="datetime-local" value="${prefill}">
-       <button class="save">Save out</button>
+       <span class="outshow">
+         <span class="outtime">${outLabel}</span>
+         <button class="iconbtn editbtn" title="Edit sign-out" aria-label="Edit sign-out">✎</button>
+       </span>
+       <span class="outedit hidden">
+         <input type="datetime-local" value="${prefill}">
+         <button class="save">Save</button>
+         <button class="iconbtn cancelbtn" title="Cancel" aria-label="Cancel">✕</button>
+       </span>
      </div>
      <div class="rec">
        <span class="hrs">${r.eligible_hours!=null?r.eligible_hours+" h":"—"}</span>
        <label class="rec"><input type="checkbox" ${r.hours_recorded?"checked":""}> recorded</label>
      </div>`;
+  const show=div.querySelector(".outshow"), edit=div.querySelector(".outedit");
+  div.querySelector(".editbtn").onclick = ()=>{
+    show.classList.add("hidden"); edit.classList.remove("hidden");
+    edit.querySelector("input").focus();
+  };
+  div.querySelector(".cancelbtn").onclick = ()=>{
+    edit.classList.add("hidden"); show.classList.remove("hidden");
+  };
   div.querySelector(".save").onclick = async ()=>{
     const v=div.querySelector('input[type=datetime-local]').value;
     if(!v) return;
