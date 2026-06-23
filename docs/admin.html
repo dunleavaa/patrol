@@ -106,6 +106,11 @@
   .saved{font-size:12px;color:var(--go);opacity:0;transition:opacity .2s}
   .saved.show{opacity:1}
   .modehelp{font-size:13px;color:var(--muted);margin:10px 2px 0}
+  .rtabs{display:flex;gap:6px;margin:0 0 12px}
+  .rtab{background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:7px 16px;cursor:pointer;font:inherit;font-size:14px;font-weight:600}
+  .rtab:hover{background:var(--snow)}
+  .rtab.on{background:var(--alpine);color:#fff;border-color:var(--alpine)}
 
   .field{margin-bottom:14px}
   .field .hint{font-size:12px;color:var(--muted);margin-top:4px}
@@ -198,16 +203,21 @@
           Batawa season commitment — shifts attended <b>or</b> cancelled, per patroller, against the target.
           Exempt people (set on the People page) are shown but never flagged short.
         </div>
+        <div class="rtabs">
+          <button class="rtab on" id="tabSummary" onclick="cmTab('summary')">Summary</button>
+          <button class="rtab" id="tabDetail" onclick="cmTab('detail')">Detail</button>
+        </div>
         <div class="toolbar">
           <label class="rec" style="gap:6px">From <input type="date" id="cmStart" value="2025-12-08"></label>
           <label class="rec" style="gap:6px">To <input type="date" id="cmEnd" value="2026-04-15"></label>
           <label class="rec" style="gap:6px"><input type="checkbox" id="cmAuto" checked onchange="document.getElementById('cmTarget').disabled=this.checked"> Auto target</label>
           <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px" disabled></label>
           <button class="ghost" onclick="loadCommitment()">Run</button>
-          <button class="ghost" onclick="exportCommitment()">Export CSV</button>
+          <button class="ghost" id="cmExport" onclick="exportCommitment()">Export CSV</button>
           <span class="count" id="cmsummary"></span>
         </div>
-        <div id="cmtable"></div>
+        <div id="cmchart" class="card pad"></div>
+        <div id="cmtable" class="hidden"></div>
       </section>
 
       <section id="view-people" class="hidden">
@@ -693,7 +703,15 @@ async function setPassword(email, name){
 }
 
 // ---- reports: Batawa season commitment ----
-let cmTable=null, cmRows=[];
+let cmTable=null, cmRows=[], cmView="summary";
+function cmTab(v){
+  cmView=v;
+  document.getElementById("tabSummary").classList.toggle("on", v==="summary");
+  document.getElementById("tabDetail").classList.toggle("on", v==="detail");
+  document.getElementById("cmchart").classList.toggle("hidden", v!=="summary");
+  document.getElementById("cmtable").classList.toggle("hidden", v!=="detail");
+  document.getElementById("cmExport").classList.toggle("hidden", v!=="detail");
+}
 async function loadCommitment(){
   const sum=document.getElementById("cmsummary");
   sum.textContent="Loading…";
@@ -701,45 +719,86 @@ async function loadCommitment(){
   const p_end  =document.getElementById("cmEnd").value   || null;
   const auto   =document.getElementById("cmAuto").checked;
   const p_target = auto ? null : (parseInt(document.getElementById("cmTarget").value,10) || null);
-  const { data, error } = await db.rpc("admin_commitment",
-    { p_start, p_end, p_target });
-  if(error){ sum.textContent=error.message; return; }
-  cmRows=data||[];
-  const tracked=cmRows.filter(r=>!r.exempt);
-  const short=tracked.filter(r=>!r.met).length;
-  const tgt = cmRows.length ? cmRows[0].target : (p_target||0);
-  if(auto) document.getElementById("cmTarget").value = tgt;   // reflect the computed value
-  sum.textContent = `target ${tgt}${auto?" (auto)":""} · ${tracked.length} tracked · ${short} short · ${cmRows.length-tracked.length} exempt`;
 
-  if(cmTable){ cmTable.replaceData(cmRows); return; }
-  cmTable = new Tabulator("#cmtable", {
-    data: cmRows,
-    layout: "fitColumns",
-    height: "620px",
-    columnDefaults: { headerHozAlign:"center", resizable:false },
-    placeholder: "No Batawa shifts in this range. Backfill shifts and seed attendance first.",
-    columns: [
-      { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
-      { title:"Total", field:"shifts_total", hozAlign:"center", width:78, sorter:"number",
-        formatter:c=>{
-          const r=c.getRow().getData();
-          if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
-          const col = r.met ? "var(--go)" : "var(--red)";
-          return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
-        } },
-      { title:"Target", field:"target", hozAlign:"center", width:88, sorter:"number" },
-      { title:"Status", field:"met", hozAlign:"center", widthGrow:1, minWidth:120,
-        formatter:c=>{
-          const r=c.getRow().getData();
-          if(r.exempt) return '<span class="badge b-remote">exempt</span>';
-          return r.met ? '<span class="badge b-out">on track</span>'
-                       : `<span class="badge b-in">short ${r.shortfall}</span>`;
-        } },
-      { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:112, sorter:"number" },
-      { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:116, sorter:"number" },
-      { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:112, sorter:"number" },
-    ],
+  const [det, summ] = await Promise.all([
+    db.rpc("admin_commitment",         { p_start, p_end, p_target }),
+    db.rpc("admin_commitment_summary", { p_start, p_end, p_target }),
+  ]);
+  if(det.error){ sum.textContent=det.error.message; return; }
+  if(summ.error){ sum.textContent=summ.error.message; return; }
+
+  cmRows=det.data||[];
+  const s=(summ.data&&summ.data[0])||{target:0,exempt:0,no_shift:0,short:0,on_track:0,over_committed:0};
+  const tgt=s.target||0;
+  if(auto) document.getElementById("cmTarget").value = tgt;
+  sum.textContent = `target ${tgt}${auto?" (auto)":""} · ${s.short} short · ${s.no_shift} no shift · ${s.exempt} exempt`;
+
+  renderCmChart(s);
+
+  // detail table
+  if(cmTable){ cmTable.replaceData(cmRows); }
+  else {
+    cmTable = new Tabulator("#cmtable", {
+      data: cmRows, layout:"fitColumns", height:"620px",
+      columnDefaults:{ headerHozAlign:"center", resizable:false },
+      placeholder:"No Batawa shifts in this range. Backfill shifts and seed attendance first.",
+      columns: [
+        { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
+        { title:"Total", field:"shifts_total", hozAlign:"center", width:78, sorter:"number",
+          formatter:c=>{
+            const r=c.getRow().getData();
+            if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
+            const col = r.met ? "var(--go)" : "var(--red)";
+            return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
+          } },
+        { title:"Target", field:"target", hozAlign:"center", width:88, sorter:"number" },
+        { title:"Status", field:"met", hozAlign:"center", widthGrow:1, minWidth:120,
+          formatter:c=>{
+            const r=c.getRow().getData();
+            if(r.exempt) return '<span class="badge b-remote">exempt</span>';
+            return r.met ? '<span class="badge b-out">on track</span>'
+                         : `<span class="badge b-in">short ${r.shortfall}</span>`;
+          } },
+        { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:112, sorter:"number" },
+        { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:116, sorter:"number" },
+        { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:112, sorter:"number" },
+      ],
+    });
+  }
+  cmTab(cmView);
+}
+function renderCmChart(s){
+  const bars=[
+    { label:"Exempt",   v:s.exempt||0,         color:"#94a3b8" },
+    { label:"No shift", v:s.no_shift||0,       color:"#c8102e" },
+    { label:"Short",    v:s.short||0,          color:"#e08a00" },
+    { label:"On track", v:s.on_track||0,       color:"#157a47" },
+    { label:"Over 20",  v:s.over_committed||0, color:"#21506a" },
+  ];
+  const W=720, H=340, L=40, R=20, T=24, B=64;          // viewBox + plot margins
+  const pw=W-L-R, ph=H-T-B;
+  const max=Math.max(1, ...bars.map(b=>b.v));
+  const step=pw/bars.length, bw=Math.min(86, step*0.6);
+  // y gridlines (4)
+  let grid="";
+  for(let i=0;i<=4;i++){
+    const gv=Math.round(max*i/4), y=T+ph-(ph*i/4);
+    grid+=`<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#e7edf2"/>`+
+          `<text x="${L-8}" y="${y+4}" text-anchor="end" font-size="11" fill="#7c8a99">${gv}</text>`;
+  }
+  let rects="";
+  bars.forEach((b,i)=>{
+    const x=L+step*i+(step-bw)/2;
+    const h=ph*(b.v/max);
+    const y=T+ph-h;
+    rects+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${b.color}"/>`+
+           `<text x="${x+bw/2}" y="${y-7}" text-anchor="middle" font-size="14" font-weight="700" fill="#1c2733">${b.v}</text>`+
+           `<text x="${x+bw/2}" y="${T+ph+20}" text-anchor="middle" font-size="12" fill="#3a4a59">${b.label}</text>`;
   });
+  document.getElementById("cmchart").innerHTML =
+    `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">Patrollers by commitment status — target ${s.target||0}</div>`+
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:760px;display:block">`+
+    `${grid}<line x1="${L}" y1="${T+ph}" x2="${W-R}" y2="${T+ph}" stroke="#cfd8e0"/>${rects}</svg>`;
 }
 function exportCommitment(){ if(cmTable) cmTable.download("csv","batawa-commitment.csv"); }
 
