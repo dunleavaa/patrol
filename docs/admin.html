@@ -217,6 +217,7 @@
           <span class="count" id="cmsummary"></span>
         </div>
         <div id="cmchart" class="card pad"></div>
+        <div id="cmfilter" class="modehelp hidden" style="margin:0 2px 8px"></div>
         <div id="cmtable" class="hidden"></div>
       </section>
 
@@ -704,6 +705,18 @@ async function setPassword(email, name){
 
 // ---- reports: Batawa season commitment ----
 let cmTable=null, cmRows=[], cmView="summary";
+// classify a detail row into the same bucket the chart uses
+function cmBucket(r){
+  if(r.exempt) return "exempt";
+  if((r.shifts_rostered||0)===0) return "no_shift";
+  if((r.shifts_total||0)>=20) return "over";
+  return r.met ? "on_track" : "short";
+}
+function cmClearFilter(){
+  if(cmTable) cmTable.clearFilter();
+  const f=document.getElementById("cmfilter");
+  f.classList.add("hidden"); f.innerHTML="";
+}
 function cmTab(v){
   cmView=v;
   document.getElementById("tabSummary").classList.toggle("on", v==="summary");
@@ -711,8 +724,22 @@ function cmTab(v){
   document.getElementById("cmchart").classList.toggle("hidden", v!=="summary");
   document.getElementById("cmtable").classList.toggle("hidden", v!=="detail");
   document.getElementById("cmExport").classList.toggle("hidden", v!=="detail");
+  cmClearFilter();
+  if(v==="detail" && cmTable) setTimeout(()=>cmTable.redraw(true), 0);  // size columns now visible
+}
+// called from a chart bar: open Detail filtered to that bucket
+function cmFilterBucket(bucket, label){
+  cmTab("detail");                       // clears any existing filter, shows table
+  if(!cmTable) return;
+  cmTable.setFilter(r => cmBucket(r) === bucket);
+  setTimeout(()=>cmTable.redraw(true), 0);
+  const n=cmTable.getDataCount("active");
+  const f=document.getElementById("cmfilter");
+  f.innerHTML = `Showing <b>${label}</b> (${n}) · <a href="#" onclick="cmClearFilter();return false;">show all</a>`;
+  f.classList.remove("hidden");
 }
 async function loadCommitment(){
+  cmClearFilter();
   const sum=document.getElementById("cmsummary");
   sum.textContent="Loading…";
   const p_start=document.getElementById("cmStart").value || null;
@@ -770,11 +797,11 @@ async function loadCommitment(){
 }
 function renderCmChart(s){
   const bars=[
-    { label:"Exempt",   v:s.exempt||0,         color:"#94a3b8" },
-    { label:"No shift", v:s.no_shift||0,       color:"#c8102e" },
-    { label:"Short",    v:s.short||0,          color:"#e08a00" },
-    { label:"On track", v:s.on_track||0,       color:"#157a47" },
-    { label:"Over 20",  v:s.over_committed||0, color:"#21506a" },
+    { label:"Exempt",   v:s.exempt||0,         color:"#94a3b8", key:"exempt"   },
+    { label:"No shift", v:s.no_shift||0,       color:"#c8102e", key:"no_shift" },
+    { label:"Short",    v:s.short||0,          color:"#e08a00", key:"short"    },
+    { label:"On track", v:s.on_track||0,       color:"#157a47", key:"on_track" },
+    { label:"Over 20",  v:s.over_committed||0, color:"#21506a", key:"over"     },
   ];
   const W=720, H=340, L=40, R=20, T=24, B=64;          // viewBox + plot margins
   const pw=W-L-R, ph=H-T-B;
@@ -787,19 +814,26 @@ function renderCmChart(s){
     grid+=`<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#e7edf2"/>`+
           `<text x="${L-8}" y="${y+4}" text-anchor="end" font-size="11" fill="#7c8a99">${gv}</text>`;
   }
-  let rects="";
+  let groups="";
   bars.forEach((b,i)=>{
-    const x=L+step*i+(step-bw)/2;
+    const cx=L+step*i;                       // column left
+    const x=cx+(step-bw)/2;
     const h=ph*(b.v/max);
     const y=T+ph-h;
-    rects+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${b.color}"/>`+
-           `<text x="${x+bw/2}" y="${y-7}" text-anchor="middle" font-size="14" font-weight="700" fill="#1c2733">${b.v}</text>`+
-           `<text x="${x+bw/2}" y="${T+ph+20}" text-anchor="middle" font-size="12" fill="#3a4a59">${b.label}</text>`;
+    const click=`onclick="cmFilterBucket('${b.key}','${b.label}')"`;
+    groups+=`<g ${click} style="cursor:pointer">`+
+            `<title>Click to list these patrollers</title>`+
+            // full-column transparent hit area so the label and empty space are clickable too
+            `<rect x="${cx}" y="${T}" width="${step}" height="${ph+B-10}" fill="transparent"/>`+
+            `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${b.color}"/>`+
+            `<text x="${x+bw/2}" y="${y-7}" text-anchor="middle" font-size="14" font-weight="700" fill="#1c2733">${b.v}</text>`+
+            `<text x="${x+bw/2}" y="${T+ph+20}" text-anchor="middle" font-size="12" fill="#3a4a59">${b.label}</text>`+
+            `</g>`;
   });
   document.getElementById("cmchart").innerHTML =
-    `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">Patrollers by commitment status — target ${s.target||0}</div>`+
+    `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">Patrollers by commitment status — target ${s.target||0} · <span style="color:var(--alpine)">click a bar to list those people</span></div>`+
     `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:760px;display:block">`+
-    `${grid}<line x1="${L}" y1="${T+ph}" x2="${W-R}" y2="${T+ph}" stroke="#cfd8e0"/>${rects}</svg>`;
+    `${grid}<line x1="${L}" y1="${T+ph}" x2="${W-R}" y2="${T+ph}" stroke="#cfd8e0"/>${groups}</svg>`;
 }
 function exportCommitment(){ if(cmTable) cmTable.download("csv","batawa-commitment.csv"); }
 
