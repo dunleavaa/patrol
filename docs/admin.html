@@ -194,8 +194,19 @@
 
       <section id="view-reports" class="hidden">
         <h2 class="vtitle">Reports</h2>
-        <div class="card pad soon"><h2>Coming soon</h2>
-          <p>Hours by patroller over a date range, with a CSV export for credit tracking.</p></div>
+        <div class="modehelp" style="margin:0 2px 12px">
+          Batawa season commitment — shifts attended <b>or</b> cancelled, per patroller, against the target.
+          Exempt people (set on the People page) are shown but never flagged short.
+        </div>
+        <div class="toolbar">
+          <label class="rec" style="gap:6px">From <input type="date" id="cmStart" value="2025-12-08"></label>
+          <label class="rec" style="gap:6px">To <input type="date" id="cmEnd" value="2026-04-15"></label>
+          <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px"></label>
+          <button class="ghost" onclick="loadCommitment()">Run</button>
+          <button class="ghost" onclick="exportCommitment()">Export CSV</button>
+          <span class="count" id="cmsummary"></span>
+        </div>
+        <div id="cmtable"></div>
       </section>
 
       <section id="view-people" class="hidden">
@@ -366,6 +377,7 @@ function go(id){
   else if(id==="coordinators") loadCoordinators();
   else if(id==="people") loadPeople();
   else if(id==="shifts") loadShifts();
+  else if(id==="reports") loadCommitment();
   else if(id==="sync") loadSync();
   else if(id==="emaillog") loadEmailLog();
 }
@@ -679,18 +691,65 @@ async function setPassword(email, name){
   alert(`Password set for ${email}. They can sign in now with email + password.`);
 }
 
+// ---- reports: Batawa season commitment ----
+let cmTable=null, cmRows=[];
+async function loadCommitment(){
+  const sum=document.getElementById("cmsummary");
+  sum.textContent="Loading…";
+  const p_start=document.getElementById("cmStart").value || null;
+  const p_end  =document.getElementById("cmEnd").value   || null;
+  const p_target=parseInt(document.getElementById("cmTarget").value,10) || 10;
+  const { data, error } = await db.rpc("admin_commitment",
+    { p_start, p_end, p_target });
+  if(error){ sum.textContent=error.message; return; }
+  cmRows=data||[];
+  const tracked=cmRows.filter(r=>!r.exempt);
+  const short=tracked.filter(r=>!r.met).length;
+  sum.textContent = `${tracked.length} tracked · ${short} short · ${cmRows.length-tracked.length} exempt`;
+
+  if(cmTable){ cmTable.replaceData(cmRows); return; }
+  cmTable = new Tabulator("#cmtable", {
+    data: cmRows,
+    layout: "fitColumns",
+    height: "620px",
+    placeholder: "No Batawa shifts in this range. Backfill shifts and seed attendance first.",
+    columns: [
+      { title:"Patroller", field:"name", sorter:"string", widthGrow:2, headerFilter:"input" },
+      { title:"Total", field:"shifts_total", hozAlign:"center", width:90, sorter:"number",
+        formatter:c=>{
+          const r=c.getRow().getData();
+          if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
+          const col = r.met ? "var(--go)" : "var(--red)";
+          return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
+        } },
+      { title:"Target", field:"target", hozAlign:"center", width:80, sorter:"number" },
+      { title:"Status", field:"met", hozAlign:"center", widthGrow:1,
+        formatter:c=>{
+          const r=c.getRow().getData();
+          if(r.exempt) return '<span class="badge b-remote">exempt</span>';
+          return r.met ? '<span class="badge b-out">on track</span>'
+                       : `<span class="badge b-in">short ${r.shortfall}</span>`;
+        } },
+      { title:"Attended", field:"shifts_attended", hozAlign:"center", width:100, sorter:"number" },
+      { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:100, sorter:"number" },
+      { title:"Rostered", field:"shifts_rostered", hozAlign:"center", width:100, sorter:"number" },
+    ],
+  });
+}
+function exportCommitment(){ if(cmTable) cmTable.download("csv","batawa-commitment.csv"); }
+
 // ---- people ----
 let peopleTable=null;
 async function loadPeople(){
   const sum=document.getElementById("peoplesummary");
   sum.textContent="Loading…";
   const { data, error } = await db.from("people")
-    .select("helper_number,name,first_name,last_name,email,phone,cell,city")
+    .select("helper_number,name,first_name,last_name,email,phone,cell,city,commitment_exempt")
     .order("name");
   if(error){ sum.textContent=error.message; return; }
   const rows=(data||[]).map(p=>({
     helper_number:p.helper_number, name:p.name, email:p.email||"",
-    phone:p.cell||p.phone||"", city:p.city||"",
+    phone:p.cell||p.phone||"", city:p.city||"", commitment_exempt:!!p.commitment_exempt,
   }));
   sum.textContent = `${rows.length} ${rows.length===1?"person":"people"}`;
 
@@ -713,6 +772,15 @@ async function loadPeople(){
       { title:"City",  field:"city",  sorter:"string", width:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
       { title:"W2H #", field:"helper_number", sorter:"string", width:110 },
+      { title:"Exempt", field:"commitment_exempt", hozAlign:"center", width:90, headerTooltip:"Exempt from the Batawa season commitment",
+        formatter:"tickCross", editor:"tickCross",
+        cellEdited: async (cell)=>{
+          const r=cell.getRow().getData();
+          const { error } = await db.from("people")
+            .update({ commitment_exempt: cell.getValue() })
+            .eq("helper_number", r.helper_number);
+          if(error){ alert(error.message); cell.restoreOldValue(); }
+        } },
     ],
   });
 }
