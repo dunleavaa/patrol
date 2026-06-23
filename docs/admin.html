@@ -213,6 +213,7 @@
           <label class="rec" style="gap:6px"><input type="checkbox" id="cmAuto" checked onchange="document.getElementById('cmTarget').disabled=this.checked"> Auto target</label>
           <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px" disabled></label>
           <button class="ghost" onclick="loadCommitment()">Run</button>
+          <button class="ghost" id="cmPdf" onclick="exportCmPdf()">Export PDF</button>
           <button class="ghost" id="cmExport" onclick="exportCommitment()">Export CSV</button>
           <span class="count" id="cmsummary"></span>
         </div>
@@ -704,7 +705,7 @@ async function setPassword(email, name){
 }
 
 // ---- reports: Batawa season commitment ----
-let cmTable=null, cmRows=[], cmView="summary";
+let cmTable=null, cmRows=[], cmView="summary", cmSummary=null;
 // classify a detail row into the same bucket the chart uses
 function cmBucket(r){
   if(r.exempt) return "exempt";
@@ -724,6 +725,7 @@ function cmTab(v){
   document.getElementById("cmchart").classList.toggle("hidden", v!=="summary");
   document.getElementById("cmtable").classList.toggle("hidden", v!=="detail");
   document.getElementById("cmExport").classList.toggle("hidden", v!=="detail");
+  document.getElementById("cmPdf").classList.toggle("hidden", v!=="summary");
   cmClearFilter();
   if(v==="detail" && cmTable) setTimeout(()=>cmTable.redraw(true), 0);  // size columns now visible
 }
@@ -756,6 +758,7 @@ async function loadCommitment(){
 
   cmRows=det.data||[];
   const s=(summ.data&&summ.data[0])||{target:0,exempt:0,no_shift:0,short:0,on_track:0,over_committed:0};
+  cmSummary=s;
   const tgt=s.target||0;
   if(auto) document.getElementById("cmTarget").value = tgt;
   sum.textContent = `target ${tgt}${auto?" (auto)":""} · ${s.short} short · ${s.no_shift} no shift · ${s.exempt} exempt`;
@@ -836,6 +839,40 @@ function renderCmChart(s){
     `${grid}<line x1="${L}" y1="${T+ph}" x2="${W-R}" y2="${T+ph}" stroke="#cfd8e0"/>${groups}</svg>`;
 }
 function exportCommitment(){ if(cmTable) cmTable.download("csv","batawa-commitment.csv"); }
+function exportCmPdf(){
+  const svgEl=document.querySelector('#cmchart svg');
+  if(!svgEl || !cmSummary){ alert("Run the report first."); return; }
+  const svgHtml=svgEl.outerHTML.replace(/onclick="[^"]*"/g,"").replace(/style="cursor:pointer"/g,"");
+  const from=document.getElementById("cmStart").value||"(start)";
+  const to  =document.getElementById("cmEnd").value||"(end)";
+  const auto=document.getElementById("cmAuto").checked;
+  const s=cmSummary;
+  const now=new Date().toLocaleString();
+  const rows=[["Exempt",s.exempt],["No shift",s.no_shift],["Short",s.short],["On track",s.on_track],["Over 20",s.over_committed]];
+  const tbody=rows.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${r[1]==null?0:r[1]}</td></tr>`).join("");
+  const html=
+    '<!doctype html><html><head><meta charset="utf-8"><title>Batawa Commitment Summary</title>'+
+    '<style>*{box-sizing:border-box}'+
+    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1c2733;margin:0;padding:28px}'+
+    'h1{font-size:20px;margin:0 0 2px}.sub{color:#5b6b78;font-size:13px;margin:0 0 16px}'+
+    '.meta{font-size:13px;color:#33414d;line-height:1.7;margin:0 0 16px}.meta b{color:#1c2733}'+
+    'table{border-collapse:collapse;margin-top:14px;font-size:13px}'+
+    'td,th{border:1px solid #dde4ea;padding:5px 14px}th{background:#f2f5f8;text-align:left}'+
+    'svg{max-width:680px;height:auto}@media print{body{padding:0}}'+
+    '</style></head><body>'+
+    '<h1>Batawa Season Commitment — Summary</h1>'+
+    '<div class="sub">Canadian Ski Patrol · Frontenac Zone</div>'+
+    '<div class="meta"><b>Date range:</b> '+from+' to '+to+'<br>'+
+    '<b>Target:</b> '+(s.target||0)+(auto?' (auto — weeks the hill is open)':'')+'<br>'+
+    '<b>Generated:</b> '+now+'</div>'+
+    svgHtml+
+    '<table><thead><tr><th>Status</th><th style="text-align:right">Patrollers</th></tr></thead><tbody>'+tbody+'</tbody></table>'+
+    '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},150);};<\/scr'+'ipt>'+
+    '</body></html>';
+  const w=window.open("","_blank");
+  if(!w){ alert("Pop-up blocked — allow pop-ups for this site to export the PDF."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
 
 // ---- people ----
 let peopleTable=null;
