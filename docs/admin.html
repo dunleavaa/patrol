@@ -201,7 +201,8 @@
         <div class="toolbar">
           <label class="rec" style="gap:6px">From <input type="date" id="cmStart" value="2025-12-08"></label>
           <label class="rec" style="gap:6px">To <input type="date" id="cmEnd" value="2026-04-15"></label>
-          <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px"></label>
+          <label class="rec" style="gap:6px"><input type="checkbox" id="cmAuto" checked onchange="document.getElementById('cmTarget').disabled=this.checked"> Auto target</label>
+          <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px" disabled></label>
           <button class="ghost" onclick="loadCommitment()">Run</button>
           <button class="ghost" onclick="exportCommitment()">Export CSV</button>
           <span class="count" id="cmsummary"></span>
@@ -698,41 +699,45 @@ async function loadCommitment(){
   sum.textContent="Loading…";
   const p_start=document.getElementById("cmStart").value || null;
   const p_end  =document.getElementById("cmEnd").value   || null;
-  const p_target=parseInt(document.getElementById("cmTarget").value,10) || 10;
+  const auto   =document.getElementById("cmAuto").checked;
+  const p_target = auto ? null : (parseInt(document.getElementById("cmTarget").value,10) || null);
   const { data, error } = await db.rpc("admin_commitment",
     { p_start, p_end, p_target });
   if(error){ sum.textContent=error.message; return; }
   cmRows=data||[];
   const tracked=cmRows.filter(r=>!r.exempt);
   const short=tracked.filter(r=>!r.met).length;
-  sum.textContent = `${tracked.length} tracked · ${short} short · ${cmRows.length-tracked.length} exempt`;
+  const tgt = cmRows.length ? cmRows[0].target : (p_target||0);
+  if(auto) document.getElementById("cmTarget").value = tgt;   // reflect the computed value
+  sum.textContent = `target ${tgt}${auto?" (auto)":""} · ${tracked.length} tracked · ${short} short · ${cmRows.length-tracked.length} exempt`;
 
   if(cmTable){ cmTable.replaceData(cmRows); return; }
   cmTable = new Tabulator("#cmtable", {
     data: cmRows,
     layout: "fitColumns",
     height: "620px",
+    columnDefaults: { headerHozAlign:"center", resizable:false },
     placeholder: "No Batawa shifts in this range. Backfill shifts and seed attendance first.",
     columns: [
-      { title:"Patroller", field:"name", sorter:"string", widthGrow:2, headerFilter:"input" },
-      { title:"Total", field:"shifts_total", hozAlign:"center", width:90, sorter:"number",
+      { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
+      { title:"Total", field:"shifts_total", hozAlign:"center", width:78, sorter:"number",
         formatter:c=>{
           const r=c.getRow().getData();
           if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
           const col = r.met ? "var(--go)" : "var(--red)";
           return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
         } },
-      { title:"Target", field:"target", hozAlign:"center", width:80, sorter:"number" },
-      { title:"Status", field:"met", hozAlign:"center", widthGrow:1,
+      { title:"Target", field:"target", hozAlign:"center", width:88, sorter:"number" },
+      { title:"Status", field:"met", hozAlign:"center", widthGrow:1, minWidth:120,
         formatter:c=>{
           const r=c.getRow().getData();
           if(r.exempt) return '<span class="badge b-remote">exempt</span>';
           return r.met ? '<span class="badge b-out">on track</span>'
                        : `<span class="badge b-in">short ${r.shortfall}</span>`;
         } },
-      { title:"Attended", field:"shifts_attended", hozAlign:"center", width:100, sorter:"number" },
-      { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:100, sorter:"number" },
-      { title:"Rostered", field:"shifts_rostered", hozAlign:"center", width:100, sorter:"number" },
+      { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:112, sorter:"number" },
+      { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:116, sorter:"number" },
+      { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:112, sorter:"number" },
     ],
   });
 }
