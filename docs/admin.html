@@ -199,27 +199,56 @@
 
       <section id="view-reports" class="hidden">
         <h2 class="vtitle">Reports</h2>
-        <div class="modehelp" style="margin:0 2px 12px">
-          Batawa season commitment — shifts attended <b>or</b> cancelled, per patroller, against the target.
-          Exempt people (set on the People page) are shown but never flagged short.
+        <div class="rtabs" style="margin-bottom:14px">
+          <button class="rtab on" id="rpBatawa" onclick="selectReport('batawa')">Batawa Commitment</button>
+          <button class="rtab" id="rpSE" onclick="selectReport('se')">Special Events</button>
         </div>
-        <div class="rtabs">
-          <button class="rtab on" id="tabSummary" onclick="cmTab('summary')">Summary</button>
-          <button class="rtab" id="tabDetail" onclick="cmTab('detail')">Detail</button>
+
+        <div id="rep-batawa">
+          <div class="modehelp" style="margin:0 2px 12px">
+            Batawa season commitment — shifts attended <b>or</b> cancelled, per patroller, against the target.
+            Exempt people (set on the People page) are shown but never flagged short.
+          </div>
+          <div class="rtabs">
+            <button class="rtab on" id="tabSummary" onclick="cmTab('summary')">Summary</button>
+            <button class="rtab" id="tabDetail" onclick="cmTab('detail')">Detail</button>
+          </div>
+          <div class="toolbar">
+            <label class="rec" style="gap:6px">From <input type="date" id="cmStart" value="2025-12-08"></label>
+            <label class="rec" style="gap:6px">To <input type="date" id="cmEnd" value="2026-04-15"></label>
+            <label class="rec" style="gap:6px"><input type="checkbox" id="cmAuto" checked onchange="document.getElementById('cmTarget').disabled=this.checked"> Auto target</label>
+            <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px" disabled></label>
+            <button class="ghost" onclick="loadCommitment()">Run</button>
+            <button class="ghost" id="cmPdf" onclick="exportCmPdf()">Export PDF</button>
+            <button class="ghost" id="cmExport" onclick="exportCommitment()">Export CSV</button>
+            <span class="count" id="cmsummary"></span>
+          </div>
+          <div id="cmchart" class="card pad"></div>
+          <div id="cmfilter" class="modehelp hidden" style="margin:0 2px 8px"></div>
+          <div id="cmtable" class="hidden"></div>
         </div>
-        <div class="toolbar">
-          <label class="rec" style="gap:6px">From <input type="date" id="cmStart" value="2025-12-08"></label>
-          <label class="rec" style="gap:6px">To <input type="date" id="cmEnd" value="2026-04-15"></label>
-          <label class="rec" style="gap:6px"><input type="checkbox" id="cmAuto" checked onchange="document.getElementById('cmTarget').disabled=this.checked"> Auto target</label>
-          <label class="rec" style="gap:6px">Target <input type="number" id="cmTarget" min="1" max="60" value="10" style="width:64px" disabled></label>
-          <button class="ghost" onclick="loadCommitment()">Run</button>
-          <button class="ghost" id="cmPdf" onclick="exportCmPdf()">Export PDF</button>
-          <button class="ghost" id="cmExport" onclick="exportCommitment()">Export CSV</button>
-          <span class="count" id="cmsummary"></span>
+
+        <div id="rep-se" class="hidden">
+          <div class="modehelp" style="margin:0 2px 12px">
+            Special events — total credited hours per person, split into quartiles (Q1 fewest hours → Q4 most).
+            Exempt people (set on the People page) are shown on their own and not ranked.
+          </div>
+          <div class="rtabs">
+            <button class="rtab on" id="seTabSummary" onclick="seTab('summary')">Summary</button>
+            <button class="rtab" id="seTabDetail" onclick="seTab('detail')">Detail</button>
+          </div>
+          <div class="toolbar">
+            <label class="rec" style="gap:6px">From <input type="date" id="seStart" value="2025-12-08"></label>
+            <label class="rec" style="gap:6px">To <input type="date" id="seEnd" value="2026-04-15"></label>
+            <button class="ghost" onclick="loadSE()">Run</button>
+            <button class="ghost" id="sePdf" onclick="exportSePdf()">Export PDF</button>
+            <button class="ghost" id="seExport" onclick="exportSE()">Export CSV</button>
+            <span class="count" id="sesummary"></span>
+          </div>
+          <div id="sechart" class="card pad"></div>
+          <div id="sefilter" class="modehelp hidden" style="margin:0 2px 8px"></div>
+          <div id="setable" class="hidden"></div>
         </div>
-        <div id="cmchart" class="card pad"></div>
-        <div id="cmfilter" class="modehelp hidden" style="margin:0 2px 8px"></div>
-        <div id="cmtable" class="hidden"></div>
       </section>
 
       <section id="view-people" class="hidden">
@@ -390,7 +419,7 @@ function go(id){
   else if(id==="coordinators") loadCoordinators();
   else if(id==="people") loadPeople();
   else if(id==="shifts") loadShifts();
-  else if(id==="reports") loadCommitment();
+  else if(id==="reports") openReports();
   else if(id==="sync") loadSync();
   else if(id==="emaillog") loadEmailLog();
 }
@@ -798,19 +827,12 @@ async function loadCommitment(){
   }
   cmTab(cmView);
 }
-function renderCmChart(s){
-  const bars=[
-    { label:"Exempt",   v:s.exempt||0,         color:"#94a3b8", key:"exempt"   },
-    { label:"No shift", v:s.no_shift||0,       color:"#c8102e", key:"no_shift" },
-    { label:"Short",    v:s.short||0,          color:"#e08a00", key:"short"    },
-    { label:"On track", v:s.on_track||0,       color:"#157a47", key:"on_track" },
-    { label:"Over 20",  v:s.over_committed||0, color:"#21506a", key:"over"     },
-  ];
-  const W=720, H=340, L=40, R=20, T=24, B=64;          // viewBox + plot margins
+// Generic bar chart. bars: [{label, sub, v, color, onclick}]. headerHtml above the svg.
+function drawBarChart(containerId, headerHtml, bars){
+  const W=720, H=348, L=40, R=20, T=24, B=72;
   const pw=W-L-R, ph=H-T-B;
   const max=Math.max(1, ...bars.map(b=>b.v));
   const step=pw/bars.length, bw=Math.min(86, step*0.6);
-  // y gridlines (4)
   let grid="";
   for(let i=0;i<=4;i++){
     const gv=Math.round(max*i/4), y=T+ph-(ph*i/4);
@@ -819,24 +841,33 @@ function renderCmChart(s){
   }
   let groups="";
   bars.forEach((b,i)=>{
-    const cx=L+step*i;                       // column left
-    const x=cx+(step-bw)/2;
-    const h=ph*(b.v/max);
-    const y=T+ph-h;
-    const click=`onclick="cmFilterBucket('${b.key}','${b.label}')"`;
-    groups+=`<g ${click} style="cursor:pointer">`+
-            `<title>Click to list these patrollers</title>`+
-            // full-column transparent hit area so the label and empty space are clickable too
+    const cx=L+step*i, x=cx+(step-bw)/2, h=ph*(b.v/max), y=T+ph-h;
+    const click=b.onclick?`onclick="${b.onclick}" style="cursor:pointer"`:"";
+    groups+=`<g ${click}>`+
+            (b.onclick?`<title>Click to list these people</title>`:"")+
             `<rect x="${cx}" y="${T}" width="${step}" height="${ph+B-10}" fill="transparent"/>`+
             `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${b.color}"/>`+
             `<text x="${x+bw/2}" y="${y-7}" text-anchor="middle" font-size="14" font-weight="700" fill="#1c2733">${b.v}</text>`+
             `<text x="${x+bw/2}" y="${T+ph+20}" text-anchor="middle" font-size="12" fill="#3a4a59">${b.label}</text>`+
+            (b.sub?`<text x="${x+bw/2}" y="${T+ph+38}" text-anchor="middle" font-size="11" fill="#7c8a99">${b.sub}</text>`:"")+
             `</g>`;
   });
-  document.getElementById("cmchart").innerHTML =
-    `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">Patrollers by commitment status — target ${s.target||0} · <span style="color:var(--alpine)">click a bar to list those people</span></div>`+
+  document.getElementById(containerId).innerHTML =
+    `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">${headerHtml}</div>`+
     `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:760px;display:block">`+
     `${grid}<line x1="${L}" y1="${T+ph}" x2="${W-R}" y2="${T+ph}" stroke="#cfd8e0"/>${groups}</svg>`;
+}
+function renderCmChart(s){
+  const bars=[
+    { label:"Exempt",   v:s.exempt||0,         color:"#94a3b8", onclick:"cmFilterBucket('exempt','Exempt')" },
+    { label:"No shift", v:s.no_shift||0,       color:"#c8102e", onclick:"cmFilterBucket('no_shift','No shift')" },
+    { label:"Short",    v:s.short||0,          color:"#e08a00", onclick:"cmFilterBucket('short','Short')" },
+    { label:"On track", v:s.on_track||0,       color:"#157a47", onclick:"cmFilterBucket('on_track','On track')" },
+    { label:"Over 20",  v:s.over_committed||0, color:"#21506a", onclick:"cmFilterBucket('over','Over 20')" },
+  ];
+  drawBarChart("cmchart",
+    `Patrollers by commitment status — target ${s.target||0} · <span style="color:var(--alpine)">click a bar to list those people</span>`,
+    bars);
 }
 function exportCommitment(){ if(cmTable) cmTable.download("csv","batawa-commitment.csv"); }
 function exportCmPdf(){
@@ -874,18 +905,158 @@ function exportCmPdf(){
   w.document.open(); w.document.write(html); w.document.close();
 }
 
+// ---- reports: picker + Special Events (total hours, quartiles) ----
+let activeReport="batawa";
+function openReports(){ selectReport(activeReport); }
+function selectReport(r){
+  activeReport=r;
+  document.getElementById("rpBatawa").classList.toggle("on", r==="batawa");
+  document.getElementById("rpSE").classList.toggle("on", r==="se");
+  document.getElementById("rep-batawa").classList.toggle("hidden", r!=="batawa");
+  document.getElementById("rep-se").classList.toggle("hidden", r!=="se");
+  if(r==="batawa") loadCommitment();
+  else if(r==="se") loadSE();
+}
+
+let seTable=null, seRows=[], seView="summary", seSummary=[];
+function seBucket(r){ return r.exempt ? "exempt" : ("Q"+(r.quartile||0)); }
+function seClearFilter(){
+  if(seTable) seTable.clearFilter();
+  const f=document.getElementById("sefilter"); f.classList.add("hidden"); f.innerHTML="";
+}
+function seTab(v){
+  seView=v;
+  document.getElementById("seTabSummary").classList.toggle("on", v==="summary");
+  document.getElementById("seTabDetail").classList.toggle("on", v==="detail");
+  document.getElementById("sechart").classList.toggle("hidden", v!=="summary");
+  document.getElementById("setable").classList.toggle("hidden", v!=="detail");
+  document.getElementById("sePdf").classList.toggle("hidden", v!=="summary");
+  document.getElementById("seExport").classList.toggle("hidden", v!=="detail");
+  seClearFilter();
+  if(v==="detail" && seTable) setTimeout(()=>seTable.redraw(true),0);
+}
+function seFilterBucket(bucket, label){
+  seTab("detail");
+  if(!seTable) return;
+  seTable.setFilter(r => seBucket(r) === bucket);
+  setTimeout(()=>seTable.redraw(true),0);
+  const n=seTable.getDataCount("active");
+  const f=document.getElementById("sefilter");
+  f.innerHTML=`Showing <b>${label}</b> (${n}) · <a href="#" onclick="seClearFilter();return false;">show all</a>`;
+  f.classList.remove("hidden");
+}
+function seBandLabel(lo,hi){
+  if(lo==null) return "";
+  return (lo===hi) ? `${lo} h` : `${lo}–${hi} h`;
+}
+async function loadSE(){
+  const sum=document.getElementById("sesummary");
+  sum.textContent="Loading…";
+  seClearFilter();
+  const p_start=document.getElementById("seStart").value||null;
+  const p_end  =document.getElementById("seEnd").value||null;
+  const [det, summ]=await Promise.all([
+    db.rpc("admin_se_detail",  { p_start, p_end }),
+    db.rpc("admin_se_summary", { p_start, p_end }),
+  ]);
+  if(det.error){ sum.textContent=det.error.message; return; }
+  if(summ.error){ sum.textContent=summ.error.message; return; }
+  seRows=det.data||[];
+  seSummary=summ.data||[];
+  const ex=(seSummary.find(b=>b.ord===0)||{}).n||0;
+  const tracked=seRows.filter(r=>!r.exempt).length;
+  sum.textContent = `${tracked} ranked · ${ex} exempt`;
+
+  renderSeChart(seSummary);
+
+  if(seTable){ seTable.replaceData(seRows); }
+  else {
+    seTable = new Tabulator("#setable", {
+      data: seRows, layout:"fitColumns", height:"620px",
+      columnDefaults:{ headerHozAlign:"center", resizable:false },
+      placeholder:"No special-events hours in this range.",
+      initialSort:[{column:"hours",dir:"desc"}],
+      columns:[
+        { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
+        { title:"Hours", field:"hours", hozAlign:"center", width:90, sorter:"number",
+          formatter:c=>`<span class="hrs">${c.getValue()??0}</span>` },
+        { title:"Quartile", field:"quartile", hozAlign:"center", widthGrow:1, minWidth:120,
+          formatter:c=>{
+            const r=c.getRow().getData();
+            if(r.exempt) return '<span class="badge b-remote">exempt</span>';
+            return r.quartile ? `<span class="badge b-out">Q${r.quartile}</span>` : "—";
+          } },
+        { title:"Band", field:"band_lo", hozAlign:"center", widthGrow:1, minWidth:120,
+          formatter:c=>{ const r=c.getRow().getData(); return r.exempt?"—":seBandLabel(r.band_lo,r.band_hi); } },
+      ],
+    });
+  }
+  seTab(seView);
+}
+function renderSeChart(rows){
+  const byOrd=o=>rows.find(b=>b.ord===o)||{n:0,lo:null,hi:null,bucket:o===0?"Exempt":("Q"+o)};
+  const ex=byOrd(0);
+  const colors=["#9cc0d6","#5d93ac","#346a86","#21506a"];
+  const bars=[{ label:"Exempt", sub:"", v:ex.n||0, color:"#94a3b8", onclick:"seFilterBucket('exempt','Exempt')" }];
+  for(let q=1;q<=4;q++){
+    const b=byOrd(q);
+    bars.push({ label:"Q"+q, sub:seBandLabel(b.lo,b.hi), v:b.n||0, color:colors[q-1],
+                onclick:`seFilterBucket('Q${q}','Q${q}')` });
+  }
+  drawBarChart("sechart",
+    `Special-events hours by quartile · <span style="color:var(--alpine)">click a bar to list those people</span>`,
+    bars);
+}
+function exportSE(){ if(seTable) seTable.download("csv","special-events-hours.csv"); }
+function exportSePdf(){
+  const svgEl=document.querySelector('#sechart svg');
+  if(!svgEl){ alert("Run the report first."); return; }
+  const svgHtml=svgEl.outerHTML.replace(/onclick="[^"]*"/g,"").replace(/style="cursor:pointer"/g,"");
+  const from=document.getElementById("seStart").value||"(start)";
+  const to  =document.getElementById("seEnd").value||"(end)";
+  const now=new Date().toLocaleString();
+  const order=[0,1,2,3,4];
+  const tbody=order.map(o=>{
+    const b=seSummary.find(x=>x.ord===o)||{bucket:o===0?"Exempt":("Q"+o),n:0,lo:null,hi:null};
+    const band=o===0?"":seBandLabel(b.lo,b.hi);
+    return `<tr><td>${b.bucket}</td><td>${band}</td><td style="text-align:right">${b.n||0}</td></tr>`;
+  }).join("");
+  const html=
+    '<!doctype html><html><head><meta charset="utf-8"><title>Special Events Hours</title>'+
+    '<style>*{box-sizing:border-box}'+
+    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1c2733;margin:0;padding:28px}'+
+    'h1{font-size:20px;margin:0 0 2px}.sub{color:#5b6b78;font-size:13px;margin:0 0 16px}'+
+    '.meta{font-size:13px;color:#33414d;line-height:1.7;margin:0 0 16px}.meta b{color:#1c2733}'+
+    'table{border-collapse:collapse;margin-top:14px;font-size:13px}'+
+    'td,th{border:1px solid #dde4ea;padding:5px 14px}th{background:#f2f5f8;text-align:left}'+
+    'svg{max-width:680px;height:auto}@media print{body{padding:0}}'+
+    '</style></head><body>'+
+    '<h1>Special Events — Hours by Quartile</h1>'+
+    '<div class="sub">Canadian Ski Patrol · Frontenac Zone</div>'+
+    '<div class="meta"><b>Date range:</b> '+from+' to '+to+'<br>'+
+    '<b>Generated:</b> '+now+'</div>'+
+    svgHtml+
+    '<table><thead><tr><th>Bucket</th><th>Hours band</th><th style="text-align:right">People</th></tr></thead><tbody>'+tbody+'</tbody></table>'+
+    '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},150);};<\/scr'+'ipt>'+
+    '</body></html>';
+  const w=window.open("","_blank");
+  if(!w){ alert("Pop-up blocked — allow pop-ups for this site to export the PDF."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 // ---- people ----
 let peopleTable=null;
 async function loadPeople(){
   const sum=document.getElementById("peoplesummary");
   sum.textContent="Loading…";
   const { data, error } = await db.from("people")
-    .select("helper_number,name,first_name,last_name,email,phone,cell,city,commitment_exempt")
+    .select("helper_number,name,first_name,last_name,email,phone,cell,city,commitment_exempt,special_events_exempt")
     .order("name");
   if(error){ sum.textContent=error.message; return; }
   const rows=(data||[]).map(p=>({
     helper_number:p.helper_number, name:p.name, email:p.email||"",
-    phone:p.cell||p.phone||"", city:p.city||"", commitment_exempt:!!p.commitment_exempt,
+    phone:p.cell||p.phone||"", city:p.city||"",
+    commitment_exempt:!!p.commitment_exempt, special_events_exempt:!!p.special_events_exempt,
   }));
   sum.textContent = `${rows.length} ${rows.length===1?"person":"people"}`;
 
@@ -908,12 +1079,21 @@ async function loadPeople(){
       { title:"City",  field:"city",  sorter:"string", width:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
       { title:"W2H #", field:"helper_number", sorter:"string", width:110 },
-      { title:"Exempt", field:"commitment_exempt", hozAlign:"center", width:90, headerTooltip:"Exempt from the Batawa season commitment",
+      { title:"Batawa exempt", field:"commitment_exempt", hozAlign:"center", width:120, headerTooltip:"Exempt from the Batawa season commitment",
         formatter:"tickCross", editor:"tickCross",
         cellEdited: async (cell)=>{
           const r=cell.getRow().getData();
           const { error } = await db.from("people")
             .update({ commitment_exempt: cell.getValue() })
+            .eq("helper_number", r.helper_number);
+          if(error){ alert(error.message); cell.restoreOldValue(); }
+        } },
+      { title:"SE exempt", field:"special_events_exempt", hozAlign:"center", width:110, headerTooltip:"Exempt from the special-events report",
+        formatter:"tickCross", editor:"tickCross",
+        cellEdited: async (cell)=>{
+          const r=cell.getRow().getData();
+          const { error } = await db.from("people")
+            .update({ special_events_exempt: cell.getValue() })
             .eq("helper_number", r.helper_number);
           if(error){ alert(error.message); cell.restoreOldValue(); }
         } },
