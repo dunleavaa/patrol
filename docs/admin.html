@@ -756,6 +756,7 @@ async function loadCommitment(){
           formatter:c=>{
             const r=c.getRow().getData();
             if(r.exempt) return '<span class="badge b-remote">exempt</span>';
+            if(r.shifts_rostered===0) return '<span class="badge b-in">no shift</span>';
             return r.met ? '<span class="badge b-out">on track</span>'
                          : `<span class="badge b-in">short ${r.shortfall}</span>`;
           } },
