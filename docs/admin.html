@@ -119,10 +119,16 @@
   code{background:var(--snow);padding:1px 6px;border-radius:6px;font-size:13px}
 
   @media(max-width:760px){
-    .layout{flex-direction:column;gap:14px}
-    .side{position:static;flex:auto;display:flex;flex-wrap:wrap;gap:6px;width:100%}
-    .navsec{margin:0} .navsec h3{display:none}
-    .navsec.collapsed .navitem{display:block}
+    .layout{flex-direction:column;gap:10px}
+    .side{position:static;width:100%;flex:auto;display:block;
+      background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 6px}
+    .navsec{margin:0;border-top:1px solid var(--line)}
+    .navsec:first-child{border-top:0}
+    .navsec h3{display:flex;justify-content:space-between;align-items:center;
+      padding:13px 8px;margin:0;font-size:12px;cursor:pointer}
+    .navsec h3 .chev{font-size:11px}
+    .navsec.collapsed .navitem{display:none}
+    .navitem{display:block;padding:12px 14px;margin:2px 0;font-size:15px}
   }
 
   /* Tabulator — themed to match the admin cards */
@@ -199,10 +205,6 @@
 
       <section id="view-reports" class="hidden">
         <h2 class="vtitle">Reports</h2>
-        <div class="rtabs" style="margin-bottom:14px">
-          <button class="rtab on" id="rpBatawa" onclick="selectReport('batawa')">Batawa Commitment</button>
-          <button class="rtab" id="rpSE" onclick="selectReport('se')">Special Events</button>
-        </div>
 
         <div id="rep-batawa">
           <div class="modehelp" style="margin:0 2px 12px">
@@ -372,14 +374,29 @@ let admin = null;
 
 // ---- nav structure ----
 const NAV = [
-  { title:"Operations", items:[["attendance","Attendance"]] },
-  { title:null,         items:[["reports","Reports"]] },
+  { title:"Operations", open:true, items:[["attendance","Attendance"]] },
+  { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
   { title:"Records",    items:[["people","People"],["shifts","Shifts"]] },
   { title:"Setup",      items:[["categories","Categories"],["email","Email & messages"],
                                ["coordinators","Coordinators"]] },
   { title:"System Logs", items:[["sync","Sync"],["emaillog","Email"]] },
 ];
-const VIEWS = NAV.flatMap(s=>s.items.map(i=>i[0]));
+// nav id -> which <section id="view-..."> to show, plus optional report key
+const ROUTES = {
+  attendance:{section:"attendance"},
+  reports:   {section:"reports", report:"batawa"},   // back-compat for old #reports links
+  rep_batawa:{section:"reports", report:"batawa"},
+  rep_se:    {section:"reports", report:"se"},
+  people:    {section:"people"},
+  shifts:    {section:"shifts"},
+  categories:{section:"categories"},
+  email:     {section:"email"},
+  coordinators:{section:"coordinators"},
+  sync:      {section:"sync"},
+  emaillog:  {section:"emaillog"},
+};
+const NAVIDS = NAV.flatMap(s=>s.items.map(i=>i[0]));
+const SECTIONS = [...new Set(Object.values(ROUTES).map(r=>r.section))];
 
 function renderNav(){
   const side=document.getElementById("side"); side.innerHTML="";
@@ -390,7 +407,7 @@ function renderNav(){
     if(sec.title){
       const h=document.createElement("h3"); h.tabIndex=0;
       h.innerHTML=`<span>${sec.title}</span><span class="chev">\u25BE</span>`;
-      if(collapsed[sec.title] !== false) box.classList.add("collapsed");
+      if(sec.open ? (collapsed[sec.title] === true) : (collapsed[sec.title] !== false)) box.classList.add("collapsed");
       const toggle=()=>{
         box.classList.toggle("collapsed");
         collapsed[sec.title]=box.classList.contains("collapsed");
@@ -409,17 +426,18 @@ function renderNav(){
   }
 }
 function go(id){
-  if(!VIEWS.includes(id)) id="attendance";
-  VIEWS.forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden", v!==id));
+  if(!ROUTES[id]) id="attendance";
+  const r=ROUTES[id];
+  SECTIONS.forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden", v!==r.section));
   document.querySelectorAll(".navitem").forEach(a=>a.classList.toggle("on", a.dataset.v===id));
   if(location.hash!=="#"+id) location.hash=id;
-  if(id==="attendance") loadAttendance();
+  if(r.section==="reports") selectReport(r.report);
+  else if(id==="attendance") loadAttendance();
   else if(id==="categories") loadCategories();
   else if(id==="email") loadEmail();
   else if(id==="coordinators") loadCoordinators();
   else if(id==="people") loadPeople();
   else if(id==="shifts") loadShifts();
-  else if(id==="reports") openReports();
   else if(id==="sync") loadSync();
   else if(id==="emaillog") loadEmailLog();
 }
@@ -910,8 +928,6 @@ let activeReport="batawa";
 function openReports(){ selectReport(activeReport); }
 function selectReport(r){
   activeReport=r;
-  document.getElementById("rpBatawa").classList.toggle("on", r==="batawa");
-  document.getElementById("rpSE").classList.toggle("on", r==="se");
   document.getElementById("rep-batawa").classList.toggle("hidden", r!=="batawa");
   document.getElementById("rep-se").classList.toggle("hidden", r!=="se");
   if(r==="batawa") loadCommitment();
@@ -919,7 +935,7 @@ function selectReport(r){
 }
 
 let seTable=null, seRows=[], seView="summary", seSummary=[];
-function seBucket(r){ return r.exempt ? "exempt" : ("Q"+(r.quartile||0)); }
+function seBucket(r){ return r.exempt ? "exempt" : ((r.hours||0)===0 ? "none" : ("Q"+(r.quartile||0))); }
 function seClearFilter(){
   if(seTable) seTable.clearFilter();
   const f=document.getElementById("sefilter"); f.classList.add("hidden"); f.innerHTML="";
@@ -964,8 +980,9 @@ async function loadSE(){
   seRows=det.data||[];
   seSummary=summ.data||[];
   const ex=(seSummary.find(b=>b.ord===0)||{}).n||0;
-  const tracked=seRows.filter(r=>!r.exempt).length;
-  sum.textContent = `${tracked} ranked · ${ex} exempt`;
+  const none=(seSummary.find(b=>b.ord===1)||{}).n||0;
+  const participants=seRows.filter(r=>!r.exempt && (r.hours||0)>0).length;
+  sum.textContent = `${participants} participants · ${none} none · ${ex} exempt`;
 
   renderSeChart(seSummary);
 
@@ -984,27 +1001,30 @@ async function loadSE(){
           formatter:c=>{
             const r=c.getRow().getData();
             if(r.exempt) return '<span class="badge b-remote">exempt</span>';
-            return r.quartile ? `<span class="badge b-out">Q${r.quartile}</span>` : "—";
+            if(!r.quartile) return '<span class="badge b-in">none</span>';
+            return `<span class="badge b-out">Q${r.quartile}</span>`;
           } },
         { title:"Band", field:"band_lo", hozAlign:"center", widthGrow:1, minWidth:120,
-          formatter:c=>{ const r=c.getRow().getData(); return r.exempt?"—":seBandLabel(r.band_lo,r.band_hi); } },
+          formatter:c=>{ const r=c.getRow().getData(); return (r.exempt||!r.quartile)?"—":seBandLabel(r.band_lo,r.band_hi); } },
       ],
     });
   }
   seTab(seView);
 }
 function renderSeChart(rows){
-  const byOrd=o=>rows.find(b=>b.ord===o)||{n:0,lo:null,hi:null,bucket:o===0?"Exempt":("Q"+o)};
-  const ex=byOrd(0);
+  const byOrd=o=>rows.find(b=>b.ord===o)||{n:0,lo:null,hi:null};
   const colors=["#9cc0d6","#5d93ac","#346a86","#21506a"];
-  const bars=[{ label:"Exempt", sub:"", v:ex.n||0, color:"#94a3b8", onclick:"seFilterBucket('exempt','Exempt')" }];
+  const bars=[
+    { label:"Exempt", sub:"", v:(byOrd(0).n)||0, color:"#94a3b8", onclick:"seFilterBucket('exempt','Exempt')" },
+    { label:"None",   sub:"0 h", v:(byOrd(1).n)||0, color:"#c8102e", onclick:"seFilterBucket('none','None')" },
+  ];
   for(let q=1;q<=4;q++){
-    const b=byOrd(q);
+    const b=byOrd(q+1);
     bars.push({ label:"Q"+q, sub:seBandLabel(b.lo,b.hi), v:b.n||0, color:colors[q-1],
                 onclick:`seFilterBucket('Q${q}','Q${q}')` });
   }
   drawBarChart("sechart",
-    `Special-events hours by quartile · <span style="color:var(--alpine)">click a bar to list those people</span>`,
+    `Special-events hours by quartile (participants only) · <span style="color:var(--alpine)">click a bar to list those people</span>`,
     bars);
 }
 function exportSE(){ if(seTable) seTable.download("csv","special-events-hours.csv"); }
@@ -1015,10 +1035,10 @@ function exportSePdf(){
   const from=document.getElementById("seStart").value||"(start)";
   const to  =document.getElementById("seEnd").value||"(end)";
   const now=new Date().toLocaleString();
-  const order=[0,1,2,3,4];
+  const order=[0,1,2,3,4,5];
   const tbody=order.map(o=>{
-    const b=seSummary.find(x=>x.ord===o)||{bucket:o===0?"Exempt":("Q"+o),n:0,lo:null,hi:null};
-    const band=o===0?"":seBandLabel(b.lo,b.hi);
+    const b=seSummary.find(x=>x.ord===o)||{bucket:(o===0?"Exempt":o===1?"None":("Q"+(o-1))),n:0,lo:null,hi:null};
+    const band=(o<=1)?"":seBandLabel(b.lo,b.hi);
     return `<tr><td>${b.bucket}</td><td>${band}</td><td style="text-align:right">${b.n||0}</td></tr>`;
   }).join("");
   const html=
