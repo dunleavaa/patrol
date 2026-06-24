@@ -47,21 +47,19 @@
     border-radius:9px;padding:8px 12px;cursor:pointer;font-size:14px}
 
   .layout{display:flex;align-items:flex-start;max-width:1120px;margin:0 auto;gap:26px;padding:22px 20px 60px}
-  .side{flex:0 0 208px;position:sticky;top:62px}
-  .navsec{margin-bottom:6px}
-  .navsec + .navsec{margin-top:16px}
-  .navsec h3{font-size:10.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
-    color:var(--teal);margin:0 0 6px;padding:0 6px 6px;border-bottom:1px solid var(--line);
-    display:flex;align-items:center;justify-content:space-between;
-    cursor:pointer;user-select:none}
-  .navsec h3:hover{color:var(--alpine)}
-  .navsec h3 .chev{font-size:9px;margin-left:6px;color:var(--muted);transition:transform .15s}
+  .side{flex:0 0 220px;position:sticky;top:62px}
+  .navsec{margin-bottom:10px;background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  .navsec h3{margin:0;padding:11px 14px;font-size:12px;font-weight:800;letter-spacing:.09em;
+    text-transform:uppercase;color:#fff;background:var(--teal);
+    display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+  .navsec h3 .chev{font-size:10px;color:#fff;margin-left:6px;transition:transform .15s}
   .navsec.collapsed h3 .chev{transform:rotate(-90deg)}
   .navsec.collapsed .navitem{display:none}
-  .navitem{display:block;padding:8px 12px;margin:2px 0;border-radius:9px;color:var(--ink);font-weight:500;
-    font-size:15px;cursor:pointer;text-decoration:none}
+  .navitem{display:block;padding:11px 16px;color:var(--ink);font-weight:600;font-size:15px;
+    cursor:pointer;text-decoration:none;border-top:1px solid var(--line)}
   .navitem:hover{background:var(--snow)}
-  .navitem.on{background:var(--alpine);color:#fff;font-weight:600}
+  .navitem.on{background:var(--alpine);color:#fff}
   .content{flex:1;min-width:0}
   .vtitle{font-size:22px;margin:2px 0 16px}
 
@@ -123,15 +121,10 @@
 
   @media(max-width:760px){
     .layout{flex-direction:column;gap:10px}
-    .side{position:static;width:100%;flex:auto;display:block;
-      background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 6px}
-    .navsec{margin:0;border-top:1px solid var(--line)}
-    .navsec:first-child{border-top:0}
-    .navsec h3{display:flex;justify-content:space-between;align-items:center;
-      padding:13px 8px;margin:0;font-size:12px;border-bottom:0;cursor:pointer}
-    .navsec h3 .chev{font-size:11px}
-    .navsec.collapsed .navitem{display:none}
-    .navitem{display:block;padding:12px 14px;margin:2px 0;font-size:15px}
+    .side{position:static;width:100%;flex:auto;display:block}
+    .navsec{margin-bottom:10px}
+    .navsec h3{padding:14px 16px;font-size:12px}
+    .navitem{padding:14px 16px;font-size:16px}
   }
 
   /* Tabulator — themed to match the admin cards */
