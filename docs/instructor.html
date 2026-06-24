@@ -8,7 +8,7 @@
 <style>
   :root{
     --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
-    --line:#dde4ea; --alpine:#21506a; --teal:#026c80; --go:#157a47; --go-press:#0f5e38;
+    --line:#dde4ea; --alpine:#21506a; --teal:#026c80; --orange:#ed6335; --go:#157a47; --go-press:#0f5e38;
     --red:#c8102e; --shadow:0 1px 2px rgba(20,40,60,.06),0 8px 26px rgba(20,40,60,.07);
   }
   *{box-sizing:border-box}
@@ -37,6 +37,8 @@
     border:1px solid var(--line);cursor:pointer;background:#fff;color:var(--muted);white-space:nowrap}
   .pill.in{background:var(--go);color:#fff;border-color:var(--go)}
   .role{color:var(--muted);font-size:13px}
+  tr.instr td{background:rgba(237,99,53,.10)}
+  tr.instr td:first-child{box-shadow:inset 3px 0 0 var(--orange)}
   .err{color:var(--red)}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);
     color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
@@ -104,6 +106,7 @@ async function render(){
   const rows=document.getElementById("rows");
   roster.forEach(r=>{
     const tr=document.createElement("tr");
+    if(/instructor/i.test(r.position_name||"")) tr.className="instr";
     tr.innerHTML = `<td>${r.name}<div class="role">${r.position_name||""}</div></td>
       <td class="r"><span class="pill ${r.attended?"in":""}">${r.attended?"Present":"Mark in"}</span></td>`;
     tr.querySelector(".pill").addEventListener("click", ()=>toggle(r, tr));

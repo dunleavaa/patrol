@@ -11,7 +11,7 @@
   :root{
     --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
     --line:#dde4ea; --red:#c8102e; --alpine:#21506a; --go:#157a47; --go-press:#0f5e38;
-    --teal:#026c80; --sage:#8db4ad;
+    --teal:#026c80; --sage:#8db4ad; --orange:#ed6335;
     --shadow:0 1px 2px rgba(20,40,60,.06),0 4px 14px rgba(20,40,60,.05);
   }
   *{box-sizing:border-box}
@@ -64,6 +64,14 @@
   .navitem.on{background:var(--teal);color:#fff}
   .navver{padding:9px 12px;font-size:11px;color:var(--muted);text-align:center;
     border-top:1px solid var(--line);letter-spacing:.02em}
+  .combo-arrow{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;
+    cursor:pointer;font-size:13px;color:var(--muted);padding:6px 8px;line-height:1}
+  .combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:#fff;
+    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:360px;overflow:auto}
+  .combo-opt{padding:9px 12px;cursor:pointer;font-size:14px}
+  .combo-opt:hover{background:var(--snow)}
+  .combo-opt.active{background:var(--snow);font-weight:600}
+  .combo-empty{padding:9px 12px;color:var(--muted);font-size:14px}
   .content{flex:1;min-width:0}
   .vtitle{font-size:22px;margin:2px 0 16px}
 
@@ -211,10 +219,12 @@
         </p>
         <div class="toolbar" style="align-items:center">
           <label for="afaDate" style="font-weight:600">Session</label>
-          <input id="afaDate" list="afaDateList" autocomplete="off" placeholder="Type to filter sessions…"
-                 onchange="afaPick()"
-                 style="flex:1 1 auto;min-width:340px;max-width:860px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
-          <datalist id="afaDateList"></datalist>
+          <div class="combo" id="afaCombo" style="flex:1 1 auto;min-width:340px;max-width:860px;position:relative">
+            <input id="afaDate" autocomplete="off" placeholder="Type to filter sessions…"
+                   style="width:100%;padding:8px 34px 8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
+            <button type="button" class="combo-arrow" id="afaArrow" aria-label="Show all sessions">▾</button>
+            <div class="combo-list" id="afaList" hidden></div>
+          </div>
         </div>
         <div class="toolbar" style="margin-top:10px">
           <button class="ghost" onclick="loadAFA()">Refresh</button>
@@ -396,7 +406,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let admin = null;
 
 // ---- nav structure ----
-const APP_VERSION = "2026.06.24c";   // bump on each deploy; shown at the bottom of the menu
+const APP_VERSION = "2026.06.24d";   // bump on each deploy; shown at the bottom of the menu
 const NAV = [
   { title:"Operations", open:true, items:[["attendance","Attendance"],["afa","First Aid Attendance"]] },
   { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
@@ -1162,7 +1172,7 @@ async function loadPeople(){
 function exportPeople(){ if(peopleTable) peopleTable.download("csv","people.csv"); }
 
 // ---- First Aid (AFA) attendance ----
-let afaTable=null, afaDates=[], afaByLabel={}, afaSelectedDate=null;
+let afaTable=null, afaDates=[], afaSelectedDate=null, afaComboReady=false;
 function afaComboLabel(r){ return `${fmtAfaDate(r.shift_date)} · ${r.label||"AFA session"}`; }
 function fmtAfaDate(d){
   // d is "YYYY-MM-DD"; render as e.g. "Thu, Oct 2 2025" without timezone drift
@@ -1170,38 +1180,56 @@ function fmtAfaDate(d){
   return new Date(y, m-1, day).toLocaleDateString("en-CA",
     { weekday:"short", month:"short", day:"numeric", year:"numeric" });
 }
+function afaComboSetup(){
+  if(afaComboReady) return; afaComboReady=true;
+  const input=document.getElementById("afaDate");
+  const arrow=document.getElementById("afaArrow");
+  const list =document.getElementById("afaList");
+  input.addEventListener("input", ()=> afaRenderList(input.value));   // typing filters
+  input.addEventListener("focus", ()=> afaRenderList(""));            // focus shows all
+  arrow.addEventListener("mousedown", e=>{ e.preventDefault();
+    if(list.hidden){ afaRenderList(""); input.focus(); } else { list.hidden=true; } });
+  document.addEventListener("click", e=>{
+    const combo=document.getElementById("afaCombo");
+    if(combo && !combo.contains(e.target)) list.hidden=true;
+  });
+}
+function afaRenderList(filter){
+  const list=document.getElementById("afaList");
+  const q=(filter||"").trim().toLowerCase();
+  const items=afaDates.filter(r=> !q || afaComboLabel(r).toLowerCase().includes(q));
+  if(!items.length){ list.innerHTML='<div class="combo-empty">No matching sessions</div>'; }
+  else{
+    list.innerHTML=items.map(r=>{
+      const a = r.shift_date===afaSelectedDate ? " active" : "";
+      return `<div class="combo-opt${a}" data-d="${r.shift_date}">${afaComboLabel(r)}</div>`;
+    }).join("");
+    list.querySelectorAll(".combo-opt").forEach(el=> el.onclick=()=>afaChoose(el.dataset.d));
+  }
+  list.hidden=false;
+}
+function afaChoose(d){
+  afaSelectedDate=d;
+  const r=afaDates.find(x=>x.shift_date===d);
+  document.getElementById("afaDate").value = r ? afaComboLabel(r) : "";
+  document.getElementById("afaList").hidden=true;
+  loadAfaRoster();
+}
 async function loadAFA(){
   const input=document.getElementById("afaDate");
-  const list=document.getElementById("afaDateList");
   const cnt=document.getElementById("afacount");
   cnt.textContent="Loading…";
   const { data, error } = await db.rpc("admin_afa_dates");
   if(error){ cnt.textContent=error.message; return; }
-  afaDates=data||[]; afaByLabel={};
-  if(!afaDates.length){
-    list.innerHTML=""; input.value=""; cnt.textContent="No AFA Training sessions found.";
-    if(afaTable) afaTable.clearData(); return;
-  }
-  list.innerHTML=afaDates.map(r=>{
-    const lbl=afaComboLabel(r); afaByLabel[lbl]=r.shift_date;
-    return `<option value="${lbl.replace(/"/g,"&quot;")}">`;
-  }).join("");
-  // keep current selection if it still exists, else default to the most recent session
+  afaDates=data||[];
+  afaComboSetup();
+  if(!afaDates.length){ input.value=""; cnt.textContent="No AFA Training sessions found.";
+    if(afaTable) afaTable.clearData(); return; }
   const stillThere = afaSelectedDate && afaDates.some(r=>r.shift_date===afaSelectedDate);
   afaSelectedDate = stillThere ? afaSelectedDate : afaDates[afaDates.length-1].shift_date;
   const cur=afaDates.find(r=>r.shift_date===afaSelectedDate);
   input.value = cur ? afaComboLabel(cur) : "";
   loadAfaRoster();
-}
-function afaPick(){
-  const input=document.getElementById("afaDate");
-  const q=(input.value||"").trim();
-  let d=afaByLabel[q];
-  if(!d && q){   // allow a partial type-then-enter to match
-    const hit=Object.keys(afaByLabel).find(l=>l.toLowerCase().includes(q.toLowerCase()));
-    if(hit){ input.value=hit; d=afaByLabel[hit]; }
-  }
-  if(d && d!==afaSelectedDate){ afaSelectedDate=d; loadAfaRoster(); }
 }
 async function loadAfaRoster(){
   const cnt=document.getElementById("afacount");
@@ -1224,6 +1252,13 @@ async function loadAfaRoster(){
     height: "560px",
     placeholder: "No one rostered for this session.",
     initialSort: [{ column:"role_rank", dir:"asc" }, { column:"name", dir:"asc" }],
+    rowFormatter:(row)=>{
+      const el=row.getElement();
+      if(row.getData().role_rank===0){           // AFA Instructor
+        el.style.background="rgba(237,99,53,.10)";
+        el.style.boxShadow="inset 3px 0 0 var(--orange)";
+      } else { el.style.background=""; el.style.boxShadow=""; }
+    },
     columns: [
       { title:"Patroller", field:"name", sorter:"string", widthGrow:2, headerFilter:"input" },
       { title:"Role", field:"position_name", sorter:"string", widthGrow:2, headerFilter:"input" },
