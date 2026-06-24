@@ -10,6 +10,10 @@ on:
         description: "Optional backfill start date YYYY-MM-DD (blank = today)"
         required: false
         default: ""
+      end:
+        description: "Optional backfill end date YYYY-MM-DD (blank = today + 60 days)"
+        required: false
+        default: ""
 
 concurrency:
   group: sync
@@ -32,9 +36,8 @@ jobs:
           W2H_PASS: ${{ secrets.W2H_PASS }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          if [ -n "${{ inputs.start }}" ]; then
-            python w2h_fetch_http.py --start "${{ inputs.start }}"
-          else
-            python w2h_fetch_http.py
-          fi
+          ARGS=""
+          if [ -n "${{ inputs.start }}" ]; then ARGS="$ARGS --start ${{ inputs.start }}"; fi
+          if [ -n "${{ inputs.end }}" ];   then ARGS="$ARGS --end ${{ inputs.end }}"; fi
+          python w2h_fetch_http.py $ARGS
           python w2h_load.py
