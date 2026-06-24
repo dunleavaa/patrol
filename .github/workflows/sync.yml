@@ -1,9 +1,10 @@
 name: Sync W2H
 
 # Pulls people + shifts from WhenToHelp and loads them into Supabase.
+# NOTE: the routine sync now runs in Supabase (sync-w2h Edge Function + Supabase
+# Cron). The scheduled trigger here is intentionally disabled; this workflow is
+# kept only as a manual fallback (Run workflow) if the Supabase sync is ever down.
 on:
-  schedule:
-    - cron: "0 */3 * * *"      # every 3 hours (UTC; interval, so tz-independent)
   workflow_dispatch:
     inputs:
       start:
