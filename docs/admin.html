@@ -62,6 +62,8 @@
     cursor:pointer;text-decoration:none;border-top:1px solid var(--line)}
   .navitem:hover{background:var(--snow)}
   .navitem.on{background:var(--teal);color:#fff}
+  .navver{padding:9px 12px;font-size:11px;color:var(--muted);text-align:center;
+    border-top:1px solid var(--line);letter-spacing:.02em}
   .content{flex:1;min-width:0}
   .vtitle{font-size:22px;margin:2px 0 16px}
 
@@ -209,7 +211,10 @@
         </p>
         <div class="toolbar">
           <label for="afaDate" style="font-weight:600">Session</label>
-          <select id="afaDate" onchange="loadAfaRoster()" style="min-width:280px"></select>
+          <input id="afaDate" list="afaDateList" autocomplete="off" placeholder="Type to filter sessions…"
+                 onchange="afaPick()"
+                 style="min-width:340px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
+          <datalist id="afaDateList"></datalist>
           <button class="ghost" onclick="loadAFA()">Refresh</button>
           <button class="ghost" onclick="afaMarkAll(true)">Mark all present</button>
           <button class="ghost" onclick="afaMarkAll(false)">Clear all</button>
@@ -389,6 +394,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let admin = null;
 
 // ---- nav structure ----
+const APP_VERSION = "2026.06.24b";   // bump on each deploy; shown at the bottom of the menu
 const NAV = [
   { title:"Operations", open:true, items:[["attendance","Attendance"],["afa","First Aid Attendance"]] },
   { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
@@ -448,6 +454,9 @@ function renderNav(){
     }
     side.appendChild(box);
   }
+  const ver=document.createElement("div");
+  ver.className="navver"; ver.textContent="v"+APP_VERSION;
+  side.appendChild(ver);
   const cur=location.hash.replace("#","")||"attendance";
   setOpenSection(navTitleFor(cur) || (NAV.find(s=>s.title)||{}).title);
 }
@@ -1151,7 +1160,8 @@ async function loadPeople(){
 function exportPeople(){ if(peopleTable) peopleTable.download("csv","people.csv"); }
 
 // ---- First Aid (AFA) attendance ----
-let afaTable=null, afaDates=[];
+let afaTable=null, afaDates=[], afaByLabel={}, afaSelectedDate=null;
+function afaComboLabel(r){ return `${fmtAfaDate(r.shift_date)} · ${r.label||"AFA session"}`; }
 function fmtAfaDate(d){
   // d is "YYYY-MM-DD"; render as e.g. "Thu, Oct 2 2025" without timezone drift
   const [y,m,day]=d.split("-").map(Number);
@@ -1159,37 +1169,48 @@ function fmtAfaDate(d){
     { weekday:"short", month:"short", day:"numeric", year:"numeric" });
 }
 async function loadAFA(){
-  const sel=document.getElementById("afaDate");
+  const input=document.getElementById("afaDate");
+  const list=document.getElementById("afaDateList");
   const cnt=document.getElementById("afacount");
   cnt.textContent="Loading…";
   const { data, error } = await db.rpc("admin_afa_dates");
   if(error){ cnt.textContent=error.message; return; }
-  afaDates=data||[];
+  afaDates=data||[]; afaByLabel={};
   if(!afaDates.length){
-    sel.innerHTML='<option value="">No AFA Training sessions found</option>';
-    cnt.textContent=""; if(afaTable){ afaTable.clearData(); }
-    return;
+    list.innerHTML=""; input.value=""; cnt.textContent="No AFA Training sessions found.";
+    if(afaTable) afaTable.clearData(); return;
   }
-  const prev=sel.value;
-  sel.innerHTML=afaDates.map(r=>{
-    const lbl=r.label ? " · "+r.label : "";
-    return `<option value="${r.shift_date}">${fmtAfaDate(r.shift_date)}${lbl} (${r.present}/${r.rostered})</option>`;
+  list.innerHTML=afaDates.map(r=>{
+    const lbl=afaComboLabel(r); afaByLabel[lbl]=r.shift_date;
+    return `<option value="${lbl.replace(/"/g,"&quot;")}">`;
   }).join("");
-  // keep the previous selection if it still exists, else pick the first
-  sel.value = afaDates.some(r=>r.shift_date===prev) ? prev : afaDates[0].shift_date;
-  cnt.textContent="";
+  // keep current selection if it still exists, else default to the most recent session
+  const stillThere = afaSelectedDate && afaDates.some(r=>r.shift_date===afaSelectedDate);
+  afaSelectedDate = stillThere ? afaSelectedDate : afaDates[afaDates.length-1].shift_date;
+  const cur=afaDates.find(r=>r.shift_date===afaSelectedDate);
+  input.value = cur ? afaComboLabel(cur) : "";
   loadAfaRoster();
 }
+function afaPick(){
+  const input=document.getElementById("afaDate");
+  const q=(input.value||"").trim();
+  let d=afaByLabel[q];
+  if(!d && q){   // allow a partial type-then-enter to match
+    const hit=Object.keys(afaByLabel).find(l=>l.toLowerCase().includes(q.toLowerCase()));
+    if(hit){ input.value=hit; d=afaByLabel[hit]; }
+  }
+  if(d && d!==afaSelectedDate){ afaSelectedDate=d; loadAfaRoster(); }
+}
 async function loadAfaRoster(){
-  const sel=document.getElementById("afaDate");
   const cnt=document.getElementById("afacount");
-  const d=sel.value;
+  const d=afaSelectedDate;
   if(!d){ if(afaTable) afaTable.clearData(); return; }
   cnt.textContent="Loading…";
   const { data, error } = await db.rpc("admin_afa_roster", { p_date:d });
   if(error){ cnt.textContent=error.message; return; }
   const rows=(data||[]).map(r=>({
     shift_id:r.shift_id, name:r.name, position_name:r.position_name||"—",
+    role_rank: /instructor/i.test(r.position_name||"") ? 0 : 1,
     attended:!!r.attended,
   }));
   const present=rows.filter(r=>r.attended).length;
@@ -1200,7 +1221,7 @@ async function loadAfaRoster(){
     layout: "fitColumns",
     height: "560px",
     placeholder: "No one rostered for this session.",
-    initialSort: [{ column:"position_name", dir:"asc" }],
+    initialSort: [{ column:"role_rank", dir:"asc" }, { column:"name", dir:"asc" }],
     columns: [
       { title:"Patroller", field:"name", sorter:"string", widthGrow:2, headerFilter:"input" },
       { title:"Role", field:"position_name", sorter:"string", widthGrow:2, headerFilter:"input" },
@@ -1213,28 +1234,25 @@ async function loadAfaRoster(){
           if(error){ alert(error.message); cell.restoreOldValue(); return; }
           afaAfterChange();
         } },
+      { field:"role_rank", visible:false },
     ],
   });
 }
 function afaAfterChange(){
-  // refresh the present/rostered count in the toolbar and the dropdown option
   if(!afaTable) return;
   const rows=afaTable.getData();
   const present=rows.filter(r=>r.attended).length;
   document.getElementById("afacount").textContent=`${present}/${rows.length} present`;
-  const sel=document.getElementById("afaDate");
-  const opt=sel.options[sel.selectedIndex];
-  if(opt) opt.text=opt.text.replace(/\(\d+\/\d+\)\s*$/, `(${present}/${rows.length})`);
 }
 async function afaMarkAll(present){
-  const d=document.getElementById("afaDate").value;
+  const d=afaSelectedDate;
   if(!d) return;
   const { error } = await db.rpc("admin_afa_mark_all", { p_date:d, p_present:present });
   if(error){ alert(error.message); return; }
   loadAfaRoster();
 }
 async function afaInstrLink(){
-  const d=document.getElementById("afaDate").value;
+  const d=afaSelectedDate;
   if(!d){ alert("Pick a session first."); return; }
   const { data, error } = await db.rpc("admin_afa_make_link", { p_date:d });
   if(error){ alert(error.message); return; }
