@@ -201,6 +201,24 @@
         <div id="attlist"></div>
       </section>
 
+      <section id="view-afa" class="hidden">
+        <h2 class="vtitle">First Aid Attendance</h2>
+        <p class="hint" style="margin:0 0 12px;color:var(--muted)">
+          Pick an AFA Training session, then mark who attended. This covers all AFA roles
+          (new candidates, re-qual, instructors). Marks are saved as you toggle them.
+        </p>
+        <div class="toolbar">
+          <label for="afaDate" style="font-weight:600">Session</label>
+          <select id="afaDate" onchange="loadAfaRoster()" style="min-width:280px"></select>
+          <button class="ghost" onclick="loadAFA()">Refresh</button>
+          <button class="ghost" onclick="afaMarkAll(true)">Mark all present</button>
+          <button class="ghost" onclick="afaMarkAll(false)">Clear all</button>
+          <button class="ghost" onclick="afaInstrLink()">Instructor link</button>
+          <span class="count" id="afacount"></span>
+        </div>
+        <div id="afatable"></div>
+      </section>
+
       <section id="view-reports" class="hidden">
         <h2 class="vtitle">Reports</h2>
 
@@ -372,7 +390,7 @@ let admin = null;
 
 // ---- nav structure ----
 const NAV = [
-  { title:"Operations", open:true, items:[["attendance","Attendance"]] },
+  { title:"Operations", open:true, items:[["attendance","Attendance"],["afa","First Aid Attendance"]] },
   { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
   { title:"Records",    items:[["people","People"],["shifts","Shifts"]] },
   { title:"Setup",      items:[["categories","Categories"],["email","Email & messages"],
@@ -382,6 +400,7 @@ const NAV = [
 // nav id -> which <section id="view-..."> to show, plus optional report key
 const ROUTES = {
   attendance:{section:"attendance"},
+  afa:       {section:"afa"},
   reports:   {section:"reports", report:"batawa"},   // back-compat for old #reports links
   rep_batawa:{section:"reports", report:"batawa"},
   rep_se:    {section:"reports", report:"se"},
@@ -441,6 +460,7 @@ function go(id){
   if(location.hash!=="#"+id) location.hash=id;
   if(r.section==="reports") selectReport(r.report);
   else if(id==="attendance") loadAttendance();
+  else if(id==="afa") loadAFA();
   else if(id==="categories") loadCategories();
   else if(id==="email") loadEmail();
   else if(id==="coordinators") loadCoordinators();
@@ -1129,6 +1149,99 @@ async function loadPeople(){
   });
 }
 function exportPeople(){ if(peopleTable) peopleTable.download("csv","people.csv"); }
+
+// ---- First Aid (AFA) attendance ----
+let afaTable=null, afaDates=[];
+function fmtAfaDate(d){
+  // d is "YYYY-MM-DD"; render as e.g. "Thu, Oct 2 2025" without timezone drift
+  const [y,m,day]=d.split("-").map(Number);
+  return new Date(y, m-1, day).toLocaleDateString("en-CA",
+    { weekday:"short", month:"short", day:"numeric", year:"numeric" });
+}
+async function loadAFA(){
+  const sel=document.getElementById("afaDate");
+  const cnt=document.getElementById("afacount");
+  cnt.textContent="Loading…";
+  const { data, error } = await db.rpc("admin_afa_dates");
+  if(error){ cnt.textContent=error.message; return; }
+  afaDates=data||[];
+  if(!afaDates.length){
+    sel.innerHTML='<option value="">No AFA Training sessions found</option>';
+    cnt.textContent=""; if(afaTable){ afaTable.clearData(); }
+    return;
+  }
+  const prev=sel.value;
+  sel.innerHTML=afaDates.map(r=>{
+    const lbl=r.label ? " · "+r.label : "";
+    return `<option value="${r.shift_date}">${fmtAfaDate(r.shift_date)}${lbl} (${r.present}/${r.rostered})</option>`;
+  }).join("");
+  // keep the previous selection if it still exists, else pick the first
+  sel.value = afaDates.some(r=>r.shift_date===prev) ? prev : afaDates[0].shift_date;
+  cnt.textContent="";
+  loadAfaRoster();
+}
+async function loadAfaRoster(){
+  const sel=document.getElementById("afaDate");
+  const cnt=document.getElementById("afacount");
+  const d=sel.value;
+  if(!d){ if(afaTable) afaTable.clearData(); return; }
+  cnt.textContent="Loading…";
+  const { data, error } = await db.rpc("admin_afa_roster", { p_date:d });
+  if(error){ cnt.textContent=error.message; return; }
+  const rows=(data||[]).map(r=>({
+    shift_id:r.shift_id, name:r.name, position_name:r.position_name||"—",
+    attended:!!r.attended,
+  }));
+  const present=rows.filter(r=>r.attended).length;
+  cnt.textContent=`${present}/${rows.length} present`;
+  if(afaTable){ afaTable.replaceData(rows); return; }
+  afaTable = new Tabulator("#afatable", {
+    data: rows,
+    layout: "fitColumns",
+    height: "560px",
+    placeholder: "No one rostered for this session.",
+    initialSort: [{ column:"position_name", dir:"asc" }],
+    columns: [
+      { title:"Patroller", field:"name", sorter:"string", widthGrow:2, headerFilter:"input" },
+      { title:"Role", field:"position_name", sorter:"string", widthGrow:2, headerFilter:"input" },
+      { title:"Present", field:"attended", hozAlign:"center", width:120,
+        formatter:"tickCross", editor:"tickCross",
+        cellEdited: async (cell)=>{
+          const r=cell.getRow().getData();
+          const { error } = await db.rpc("admin_afa_set",
+            { p_shift_id:r.shift_id, p_present:cell.getValue() });
+          if(error){ alert(error.message); cell.restoreOldValue(); return; }
+          afaAfterChange();
+        } },
+    ],
+  });
+}
+function afaAfterChange(){
+  // refresh the present/rostered count in the toolbar and the dropdown option
+  if(!afaTable) return;
+  const rows=afaTable.getData();
+  const present=rows.filter(r=>r.attended).length;
+  document.getElementById("afacount").textContent=`${present}/${rows.length} present`;
+  const sel=document.getElementById("afaDate");
+  const opt=sel.options[sel.selectedIndex];
+  if(opt) opt.text=opt.text.replace(/\(\d+\/\d+\)\s*$/, `(${present}/${rows.length})`);
+}
+async function afaMarkAll(present){
+  const d=document.getElementById("afaDate").value;
+  if(!d) return;
+  const { error } = await db.rpc("admin_afa_mark_all", { p_date:d, p_present:present });
+  if(error){ alert(error.message); return; }
+  loadAfaRoster();
+}
+async function afaInstrLink(){
+  const d=document.getElementById("afaDate").value;
+  if(!d){ alert("Pick a session first."); return; }
+  const { data, error } = await db.rpc("admin_afa_make_link", { p_date:d });
+  if(error){ alert(error.message); return; }
+  const url=new URL("instructor.html?t="+data, location.href).href;
+  try{ await navigator.clipboard.writeText(url); alert("Instructor link copied to clipboard:\n\n"+url); }
+  catch(e){ prompt("Instructor link (copy this):", url); }
+}
 
 // ---- shifts ----
 let shiftsTable=null;

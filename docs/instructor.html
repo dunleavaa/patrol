@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AFA Instructor · Frontenac Zone</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
+    --line:#dde4ea; --alpine:#21506a; --teal:#026c80; --go:#157a47; --go-press:#0f5e38;
+    --red:#c8102e; --shadow:0 1px 2px rgba(20,40,60,.06),0 8px 26px rgba(20,40,60,.07);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--snow);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .card{max-width:620px;margin:5vh auto 40px;background:var(--surface);
+    border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:26px 22px}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)}
+  h1{font-size:22px;margin:6px 0 2px}
+  .lead{color:var(--muted);margin:0 0 16px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:14px;margin:0 0 18px}
+  .meta b{color:var(--ink)}
+  .actions{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}
+  .btn{font:inherit;font-size:15px;font-weight:700;border:0;border-radius:12px;
+    padding:13px 16px;cursor:pointer;color:#fff;background:var(--go);flex:1 1 auto;min-width:140px}
+  .btn:active{transform:translateY(1px)}
+  .btn.out{background:var(--alpine)}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn[disabled]{opacity:.55;cursor:default}
+  .count{font-size:14px;color:var(--muted);margin:0 0 10px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);font-size:15px}
+  th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  td.r{text-align:right;width:120px}
+  .pill{display:inline-block;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:700;
+    border:1px solid var(--line);cursor:pointer;background:#fff;color:var(--muted);white-space:nowrap}
+  .pill.in{background:var(--go);color:#fff;border-color:var(--go)}
+  .role{color:var(--muted);font-size:13px}
+  .err{color:var(--red)}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);
+    color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:.95}
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="eyebrow">Canadian Ski Patrol · Frontenac Zone</div>
+    <div id="body"><p class="lead" id="status">Loading…</p></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://mgnpfgziiwqhfcrkqkqa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_UZw7sVPRN-Q51-zzXW1htQ_2HQwd2t3";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false } });
+
+const token = new URLSearchParams(location.search).get("t");
+const body  = document.getElementById("body");
+let session = null, roster = [];
+
+function fmtDate(d){ if(!d) return ""; const x=new Date(d+"T00:00:00");
+  return x.toLocaleDateString([], {weekday:"long", month:"long", day:"numeric", year:"numeric"}); }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg;
+  t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1800); }
+
+async function boot(){
+  const status=document.getElementById("status");
+  if(!token){ status.textContent="This link is missing its code."; status.className="lead err"; return; }
+  const { data, error } = await db.rpc("instr_session", { p_token: token });
+  if(error){ status.textContent=error.message; status.className="lead err"; return; }
+  session = (data&&data[0]) || null;
+  if(!session || session.expired){
+    status.textContent = session ? "This instructor link has expired." : "This link isn't valid.";
+    status.className="lead err"; return;
+  }
+  await render();
+}
+
+async function render(){
+  // refresh roster
+  const { data, error } = await db.rpc("instr_roster", { p_token: token });
+  if(error){ body.innerHTML=`<p class="lead err">${error.message}</p>`; return; }
+  roster = data||[];
+  const present = roster.filter(r=>r.attended).length;
+
+  body.innerHTML = `
+    <h1>AFA Training</h1>
+    <p class="lead">${session.label || "First Aid course session"}</p>
+    <div class="meta">
+      <span><b>${fmtDate(session.session_date)}</b></span>
+      <span>${roster.length} rostered</span>
+      <span><b id="presentN">${present}</b> present</span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="allin">Sign everyone in</button>
+      <button class="btn out" id="allout">Sign everyone out</button>
+      <button class="btn ghost" id="pdf">Attendance sheet (PDF)</button>
+    </div>
+    <div class="count">Tap a person to toggle their attendance.</div>
+    <table><thead><tr><th>Patroller</th><th class="r">Present</th></tr></thead>
+      <tbody id="rows"></tbody></table>`;
+
+  const rows=document.getElementById("rows");
+  roster.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML = `<td>${r.name}<div class="role">${r.position_name||""}</div></td>
+      <td class="r"><span class="pill ${r.attended?"in":""}">${r.attended?"Present":"Mark in"}</span></td>`;
+    tr.querySelector(".pill").addEventListener("click", ()=>toggle(r, tr));
+    rows.appendChild(tr);
+  });
+  document.getElementById("allin").addEventListener("click", ()=>signAll(true));
+  document.getElementById("allout").addEventListener("click", ()=>signAll(false));
+  document.getElementById("pdf").addEventListener("click", printSheet);
+}
+
+async function toggle(r, tr){
+  const next=!r.attended;
+  const { error } = await db.rpc("instr_set", { p_token: token, p_shift_id: r.shift_id, p_present: next });
+  if(error){ toast(error.message); return; }
+  r.attended=next;
+  const pill=tr.querySelector(".pill");
+  pill.classList.toggle("in", next); pill.textContent = next?"Present":"Mark in";
+  document.getElementById("presentN").textContent = roster.filter(x=>x.attended).length;
+}
+
+async function signAll(into){
+  const btn=document.getElementById(into?"allin":"allout"); btn.disabled=true;
+  const { data, error } = await db.rpc("instr_sign_all", { p_token: token, p_in: into });
+  btn.disabled=false;
+  if(error){ toast(error.message); return; }
+  toast(into ? `Signed in ${data} more` : `Signed out ${data}`);
+  await render();
+}
+
+function printSheet(){
+  const rowsHtml = roster.map(r=>`<tr><td>${r.name}</td><td>${r.position_name||""}</td>
+    <td style="text-align:center">${r.attended?"✓":""}</td><td></td></tr>`).join("");
+  const w=window.open("","_blank");
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>AFA Attendance ${session.session_date}</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;margin:32px;color:#16202b}
+      h1{font-size:18px;margin:0 0 2px} .sub{color:#5c6b7a;margin:0 0 16px}
+      table{width:100%;border-collapse:collapse} th,td{border:1px solid #cbd5e1;padding:8px 10px;font-size:13px;text-align:left}
+      th{background:#eef2f5} td:nth-child(3){width:70px} td:nth-child(4){width:200px}</style></head>
+    <body>
+      <h1>AFA Training — Attendance</h1>
+      <p class="sub">${session.label||""} · ${fmtDate(session.session_date)} · ${roster.length} rostered</p>
+      <table><thead><tr><th>Patroller</th><th>Role</th><th>Present</th><th>Signature</th></tr></thead>
+        <tbody>${rowsHtml}</tbody></table>
+    </body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(), 300);
+}
+
+boot();
+</script>
+</body>
+</html>
