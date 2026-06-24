@@ -47,19 +47,21 @@
     border-radius:9px;padding:8px 12px;cursor:pointer;font-size:14px}
 
   .layout{display:flex;align-items:flex-start;max-width:1120px;margin:0 auto;gap:26px;padding:22px 20px 60px}
-  .side{flex:0 0 220px;position:sticky;top:62px}
-  .navsec{margin-bottom:10px;background:var(--surface);border:1px solid var(--line);
-    border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  .side{flex:0 0 220px;position:sticky;top:62px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  .navsec{margin:0}
   .navsec h3{margin:0;padding:11px 14px;font-size:12px;font-weight:800;letter-spacing:.09em;
-    text-transform:uppercase;color:#fff;background:var(--teal);
-    display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+    text-transform:uppercase;color:#fff;background:var(--alpine);
+    display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;
+    border-top:1px solid rgba(255,255,255,.14)}
+  .navsec:first-child h3{border-top:0}
   .navsec h3 .chev{font-size:10px;color:#fff;margin-left:6px;transition:transform .15s}
   .navsec.collapsed h3 .chev{transform:rotate(-90deg)}
   .navsec.collapsed .navitem{display:none}
   .navitem{display:block;padding:11px 16px;color:var(--ink);font-weight:600;font-size:15px;
     cursor:pointer;text-decoration:none;border-top:1px solid var(--line)}
   .navitem:hover{background:var(--snow)}
-  .navitem.on{background:var(--alpine);color:#fff}
+  .navitem.on{background:var(--teal);color:#fff}
   .content{flex:1;min-width:0}
   .vtitle{font-size:22px;margin:2px 0 16px}
 
@@ -122,7 +124,7 @@
   @media(max-width:760px){
     .layout{flex-direction:column;gap:10px}
     .side{position:static;width:100%;flex:auto;display:block}
-    .navsec{margin-bottom:10px}
+    .navsec{margin:0}
     .navsec h3{padding:14px 16px;font-size:12px}
     .navitem{padding:14px 16px;font-size:16px}
   }
@@ -394,20 +396,27 @@ const ROUTES = {
 const NAVIDS = NAV.flatMap(s=>s.items.map(i=>i[0]));
 const SECTIONS = [...new Set(Object.values(ROUTES).map(r=>r.section))];
 
+function navTitleFor(id){
+  for(const sec of NAV){ if(sec.title && sec.items.some(it=>it[0]===id)) return sec.title; }
+  return null;
+}
+function setOpenSection(title){
+  document.querySelectorAll("#side .navsec").forEach(box=>{
+    const t=box.dataset.title||"";
+    box.classList.toggle("collapsed", !(t && t===title));
+  });
+}
 function renderNav(){
   const side=document.getElementById("side"); side.innerHTML="";
-  let collapsed={};
-  try{ collapsed=JSON.parse(localStorage.getItem("navCollapsed")||"{}"); }catch(e){}
   for(const sec of NAV){
-    const box=document.createElement("div"); box.className="navsec";
+    const box=document.createElement("div"); box.className="navsec collapsed";
+    box.dataset.title=sec.title||"";
     if(sec.title){
       const h=document.createElement("h3"); h.tabIndex=0;
       h.innerHTML=`<span>${sec.title}</span><span class="chev">\u25BE</span>`;
-      if(sec.open ? (collapsed[sec.title] === true) : (collapsed[sec.title] !== false)) box.classList.add("collapsed");
       const toggle=()=>{
-        box.classList.toggle("collapsed");
-        collapsed[sec.title]=box.classList.contains("collapsed");
-        try{ localStorage.setItem("navCollapsed", JSON.stringify(collapsed)); }catch(e){}
+        const willOpen=box.classList.contains("collapsed");
+        setOpenSection(willOpen ? sec.title : null);   // open this one, close the rest
       };
       h.addEventListener("click", toggle);
       h.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } });
@@ -420,12 +429,15 @@ function renderNav(){
     }
     side.appendChild(box);
   }
+  const cur=location.hash.replace("#","")||"attendance";
+  setOpenSection(navTitleFor(cur) || (NAV.find(s=>s.title)||{}).title);
 }
 function go(id){
   if(!ROUTES[id]) id="attendance";
   const r=ROUTES[id];
   SECTIONS.forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden", v!==r.section));
   document.querySelectorAll(".navitem").forEach(a=>a.classList.toggle("on", a.dataset.v===id));
+  setOpenSection(navTitleFor(id));
   if(location.hash!=="#"+id) location.hash=id;
   if(r.section==="reports") selectReport(r.report);
   else if(id==="attendance") loadAttendance();
