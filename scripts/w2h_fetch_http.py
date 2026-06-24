@@ -101,8 +101,12 @@ def main():
     ap.add_argument("--start", help="shift window start, YYYY-MM-DD (default: today)")
     ap.add_argument("--end", help="shift window end, YYYY-MM-DD (default: today + 60)")
     args = ap.parse_args()
-    start = date.fromisoformat(args.start) if args.start else date.today()
-    end = date.fromisoformat(args.end) if args.end else date.today() + timedelta(days=WINDOW_DAYS)
+    try:
+        start = date.fromisoformat(args.start) if args.start else date.today()
+        end = date.fromisoformat(args.end) if args.end else date.today() + timedelta(days=WINDOW_DAYS)
+    except ValueError as e:
+        sys.exit(f"Bad date ({e}). Use real calendar dates as YYYY-MM-DD "
+                 f"(e.g. 2026-11-30 -- November has 30 days, not 31).")
     us = lambda d: d.strftime("%m/%d/%Y")  # W2H wants MM/DD/YYYY
 
     s = requests.Session()
@@ -118,6 +122,7 @@ def main():
     try:
         from w2h_parse import parse
         model = parse(str(shifts), str(helpers))
+        model["_window"] = {"start": start.isoformat(), "end": end.isoformat()}
         json.dump(model, open("model.json", "w", encoding="utf-8"),
                   indent=2, ensure_ascii=False)
         print(f"parsed -> model.json  "

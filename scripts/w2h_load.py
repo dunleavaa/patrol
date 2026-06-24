@@ -43,11 +43,25 @@ def build_rows(model):
     positions = [(p["position_id"], p["name"])
                  for p in model["positions"] if p["position_id"]]
     categories = [(c["cat"], c["name"], c["mode"]) for c in model["categories"]]
+    # Only load shifts whose helper exists in the people export. Shifts for former
+    # members (gone from W2H's helper list) or unassigned open slots have no person
+    # to reference and would violate the helper_number foreign key.
+    people_ids = {p["helper_number"] for p in model["people"]}
+    src_shifts = model["shifts"]
+    kept = [s for s in src_shifts if s.get("helper_number") in people_ids]
+    skipped = len(src_shifts) - len(kept)
+    if skipped:
+        bad = sorted({s.get("helper_number", "") for s in src_shifts
+                      if s.get("helper_number") not in people_ids})
+        shown = ", ".join(b or "(blank)" for b in bad[:6])
+        print(f"   note: skipped {skipped} shift(s) with no matching person "
+              f"(unassigned slots or former members); helper#: {shown}"
+              f"{' ...' if len(bad) > 6 else ''}")
     shifts = [(s["shift_id"], s["schedule_id"], s["helper_number"],
                s["position_id"] or None, s["cat"] or None, s["description"],
                to_date(s["start"]) or to_date_us(s["date"]),
                to_dt(s["start"]), to_dt(s["end"]), s["duration_hours"])
-              for s in model["shifts"]]
+              for s in kept]
     return people, positions, categories, shifts
 
 
@@ -93,10 +107,15 @@ on conflict (shift_id) do update set
   duration_hours=excluded.duration_hours, last_seen_at=now(), cancelled=false, updated_at=now();
 """
 
-# Future shifts not present in this pull have been removed in W2H -> cancel them.
+# Cancel only FUTURE shifts that fall INSIDE the window we actually fetched and
+# are missing from this pull (removed in W2H). Bounding by the window's end date
+# means a narrow scheduled pull (~60 days) or a past-dated backfill can never
+# cancel far-future shifts it never asked W2H about.
 CANCEL_SQL = """
 update shifts set cancelled=true, updated_at=now()
-where shift_date >= current_date and not (shift_id = any(%s));
+where shift_date >= current_date
+  and shift_date <= %s
+  and not (shift_id = any(%s));
 """
 
 
@@ -118,15 +137,29 @@ def dry_run(model):
 def load(model, dsn):
     import psycopg
     people, positions, categories, shifts = build_rows(model)
-    seen_ids = [s[0] for s in shifts]
+    # "Seen" = every shift id present in the pull, even ones we skipped inserting,
+    # so we never cancel a shift that genuinely still exists in W2H.
+    seen_ids = [s["shift_id"] for s in model["shifts"]]
+    # Upper bound for cancellation: the fetched window end, else the latest shift
+    # date we actually saw. Without a bound we'd risk cancelling future shifts
+    # outside the queried range.
+    win_end = (model.get("_window") or {}).get("end")
+    if win_end:
+        cancel_upper = win_end
+    else:
+        seen_dates = [s[6] for s in shifts if s[6] is not None]
+        cancel_upper = max(seen_dates) if seen_dates else None
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
             cur.executemany(PEOPLE_SQL, people)
             cur.executemany(POSITIONS_SQL, positions)
             cur.executemany(CATEGORIES_SQL, categories)
             cur.executemany(SHIFTS_SQL, shifts)
-            cur.execute(CANCEL_SQL, (seen_ids,))
-            cancelled = cur.rowcount
+            if cancel_upper is not None:
+                cur.execute(CANCEL_SQL, (cancel_upper, seen_ids))
+                cancelled = cur.rowcount
+            else:
+                cancelled = 0
             cur.execute(
                 "insert into sync_runs (people_count, shift_count, ok, message) "
                 "values (%s, %s, true, %s);",
