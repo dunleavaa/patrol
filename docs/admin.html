@@ -11,6 +11,7 @@
   :root{
     --snow:#eef2f5; --surface:#ffffff; --ink:#16202b; --muted:#5c6b7a;
     --line:#dde4ea; --red:#c8102e; --alpine:#21506a; --go:#157a47; --go-press:#0f5e38;
+    --teal:#026c80; --sage:#8db4ad;
     --shadow:0 1px 2px rgba(20,40,60,.06),0 4px 14px rgba(20,40,60,.05);
   }
   *{box-sizing:border-box}
@@ -47,18 +48,20 @@
 
   .layout{display:flex;align-items:flex-start;max-width:1120px;margin:0 auto;gap:26px;padding:22px 20px 60px}
   .side{flex:0 0 208px;position:sticky;top:62px}
-  .navsec{margin-bottom:15px}
-  .navsec h3{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--muted);margin:0 0 6px 10px;display:flex;align-items:center;justify-content:space-between;
+  .navsec{margin-bottom:6px}
+  .navsec + .navsec{margin-top:16px}
+  .navsec h3{font-size:10.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--teal);margin:0 0 6px;padding:0 6px 6px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
     cursor:pointer;user-select:none}
-  .navsec h3:hover{color:var(--ink)}
-  .navsec h3 .chev{font-size:9px;margin-left:6px;transition:transform .15s}
+  .navsec h3:hover{color:var(--alpine)}
+  .navsec h3 .chev{font-size:9px;margin-left:6px;color:var(--muted);transition:transform .15s}
   .navsec.collapsed h3 .chev{transform:rotate(-90deg)}
   .navsec.collapsed .navitem{display:none}
-  .navitem{display:block;padding:9px 12px;border-radius:9px;color:var(--ink);font-weight:600;
+  .navitem{display:block;padding:8px 12px;margin:2px 0;border-radius:9px;color:var(--ink);font-weight:500;
     font-size:15px;cursor:pointer;text-decoration:none}
   .navitem:hover{background:var(--snow)}
-  .navitem.on{background:var(--alpine);color:#fff}
+  .navitem.on{background:var(--alpine);color:#fff;font-weight:600}
   .content{flex:1;min-width:0}
   .vtitle{font-size:22px;margin:2px 0 16px}
 
@@ -125,7 +128,7 @@
     .navsec{margin:0;border-top:1px solid var(--line)}
     .navsec:first-child{border-top:0}
     .navsec h3{display:flex;justify-content:space-between;align-items:center;
-      padding:13px 8px;margin:0;font-size:12px;cursor:pointer}
+      padding:13px 8px;margin:0;font-size:12px;border-bottom:0;cursor:pointer}
     .navsec h3 .chev{font-size:11px}
     .navsec.collapsed .navitem{display:none}
     .navitem{display:block;padding:12px 14px;margin:2px 0;font-size:15px}
