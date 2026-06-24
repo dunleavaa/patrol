@@ -209,12 +209,14 @@
           Pick an AFA Training session, then mark who attended. This covers all AFA roles
           (new candidates, re-qual, instructors). Marks are saved as you toggle them.
         </p>
-        <div class="toolbar">
+        <div class="toolbar" style="align-items:center">
           <label for="afaDate" style="font-weight:600">Session</label>
           <input id="afaDate" list="afaDateList" autocomplete="off" placeholder="Type to filter sessions…"
                  onchange="afaPick()"
-                 style="min-width:340px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
+                 style="flex:1 1 auto;min-width:340px;max-width:860px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
           <datalist id="afaDateList"></datalist>
+        </div>
+        <div class="toolbar" style="margin-top:10px">
           <button class="ghost" onclick="loadAFA()">Refresh</button>
           <button class="ghost" onclick="afaMarkAll(true)">Mark all present</button>
           <button class="ghost" onclick="afaMarkAll(false)">Clear all</button>
@@ -394,7 +396,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let admin = null;
 
 // ---- nav structure ----
-const APP_VERSION = "2026.06.24b";   // bump on each deploy; shown at the bottom of the menu
+const APP_VERSION = "2026.06.24c";   // bump on each deploy; shown at the bottom of the menu
 const NAV = [
   { title:"Operations", open:true, items:[["attendance","Attendance"],["afa","First Aid Attendance"]] },
   { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
