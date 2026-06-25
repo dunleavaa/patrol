@@ -1,11 +1,12 @@
 name: Send invites
 
 # Emails remote-event sign-in links for shifts starting soon.
-# The script only sends to shifts inside its time window that haven't been
-# invited yet, so polling every 10 minutes never double-sends.
+# NOTE: the routine send now runs in Supabase (send-invites Edge Function +
+# Supabase Cron, every 10 min). The scheduled trigger here is intentionally
+# disabled; this workflow is kept only as a manual fallback (Run workflow) if
+# the Supabase sender is ever down. The script still dedupes via sent_at, so a
+# manual run alongside the Supabase job will not double-send.
 on:
-  schedule:
-    - cron: "*/10 * * * *"     # every 10 minutes
   workflow_dispatch:
     inputs:
       shift:
