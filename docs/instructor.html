@@ -97,7 +97,8 @@ async function render(){
     <div class="actions">
       <button class="btn" id="allin">Sign everyone in</button>
       <button class="btn out" id="allout">Sign everyone out</button>
-      <button class="btn ghost" id="pdf">Attendance sheet (PDF)</button>
+      <button class="btn ghost" id="email">Email attendance sheet</button>
+      <button class="btn ghost" id="print">Print</button>
     </div>
     <div class="count">Tap a person to toggle their attendance.</div>
     <table><thead><tr><th>Patroller</th><th class="r">Present</th></tr></thead>
@@ -114,7 +115,8 @@ async function render(){
   });
   document.getElementById("allin").addEventListener("click", ()=>signAll(true));
   document.getElementById("allout").addEventListener("click", ()=>signAll(false));
-  document.getElementById("pdf").addEventListener("click", printSheet);
+  document.getElementById("email").addEventListener("click", emailSheet);
+  document.getElementById("print").addEventListener("click", printSheet);
 }
 
 async function toggle(r, tr){
@@ -134,6 +136,21 @@ async function signAll(into){
   if(error){ toast(error.message); return; }
   toast(into ? `Signed in ${data} more` : `Signed out ${data}`);
   await render();
+}
+
+async function emailSheet(){
+  const btn=document.getElementById("email"); const old=btn.textContent;
+  btn.disabled=true; btn.textContent="Sending\u2026";
+  const { data, error } = await db.functions.invoke("attendance-sheet", { body: { token } });
+  btn.disabled=false; btn.textContent=old;
+  if(error){
+    let msg = error.message || "Could not send";
+    try { const j = await error.context.json(); if(j && j.error) msg = j.error; } catch(_){}
+    toast(msg); return;
+  }
+  if(data && data.error){ toast(data.error); return; }
+  const n = (data && data.sent_to) ? data.sent_to.length : 0;
+  toast("Attendance sheet emailed" + (n ? ` to ${n} recipient${n>1?"s":""}` : ""));
 }
 
 function printSheet(){

@@ -231,6 +231,7 @@
           <button class="ghost" onclick="afaMarkAll(true)">Mark all present</button>
           <button class="ghost" onclick="afaMarkAll(false)">Clear all</button>
           <button class="ghost" onclick="afaInstrLink()">Instructor link</button>
+          <button class="ghost" onclick="afaEmailSheet(this)">Email attendance sheet</button>
           <span class="count" id="afacount"></span>
         </div>
         <div id="afatable"></div>
@@ -1296,6 +1297,22 @@ async function afaInstrLink(){
   const url=new URL("instructor.html?t="+data, location.href).href;
   try{ await navigator.clipboard.writeText(url); alert("Instructor link copied to clipboard:\n\n"+url); }
   catch(e){ prompt("Instructor link (copy this):", url); }
+}
+async function afaEmailSheet(btn){
+  const d=afaSelectedDate;
+  if(!d){ alert("Pick a session first."); return; }
+  const old = btn ? btn.textContent : "";
+  if(btn){ btn.disabled=true; btn.textContent="Sending\u2026"; }
+  const { data, error } = await db.functions.invoke("attendance-sheet", { body: { date: d } });
+  if(btn){ btn.disabled=false; btn.textContent=old; }
+  if(error){
+    let msg = error.message || "Could not send";
+    try { const j = await error.context.json(); if(j && j.error) msg = j.error; } catch(_){}
+    alert(msg); return;
+  }
+  if(data && data.error){ alert(data.error); return; }
+  const who = (data && data.sent_to) ? data.sent_to.join(", ") : "";
+  alert("Attendance sheet emailed" + (who ? ":\n\n"+who : "."));
 }
 
 // ---- shifts ----
