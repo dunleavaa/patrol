@@ -52,6 +52,9 @@
   .navtoggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);
     border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;margin-right:10px}
   .navtoggle:hover{background:var(--snow)}
+  /* Let People-table column headers wrap onto two lines instead of truncating. */
+  #peopletable .tabulator-col .tabulator-col-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
+  #peopletable .tabulator-header .tabulator-col{vertical-align:top}
   .side{flex:0 0 220px;position:sticky;top:62px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
   .navsec{margin:0}
@@ -295,7 +298,7 @@
       <section id="view-people" class="hidden">
         <h2 class="vtitle">People</h2>
         <div class="toolbar">
-          <button class="navtoggle" onclick="toggleNav()" title="Show/hide the menu">\u2630 Menu</button>
+          <button class="navtoggle" onclick="toggleNav()" title="Show/hide the menu">&#9776; Menu</button>
           <button class="ghost" onclick="loadPeople()">Refresh</button>
           <button class="ghost" onclick="exportPeople()">Export CSV</button>
           <span class="count" id="peoplesummary"></span>
@@ -1162,7 +1165,7 @@ async function loadPeople(){
       { title:"City",  field:"city",  sorter:"string", width:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
       { title:"W2H #", field:"helper_number", sorter:"string", width:110 },
-      { title:"Batawa exempt", field:"commitment_exempt", hozAlign:"center", width:120, headerTooltip:"Exempt from the Batawa season commitment",
+      { title:"Batawa exempt", field:"commitment_exempt", hozAlign:"center", width:90, headerTooltip:"Exempt from the Batawa season commitment",
         formatter:"tickCross", editor:"tickCross",
         cellEdited: async (cell)=>{
           const r=cell.getRow().getData();
@@ -1171,7 +1174,7 @@ async function loadPeople(){
             .eq("helper_number", r.helper_number);
           if(error){ alert(error.message); cell.restoreOldValue(); }
         } },
-      { title:"SE exempt", field:"special_events_exempt", hozAlign:"center", width:110, headerTooltip:"Exempt from the special-events report",
+      { title:"SE exempt", field:"special_events_exempt", hozAlign:"center", width:90, headerTooltip:"Exempt from the special-events report",
         formatter:"tickCross", editor:"tickCross",
         cellEdited: async (cell)=>{
           const r=cell.getRow().getData();
@@ -1180,7 +1183,7 @@ async function loadPeople(){
             .eq("helper_number", r.helper_number);
           if(error){ alert(error.message); cell.restoreOldValue(); }
         } },
-      { title:"Out of zone", field:"out_of_zone", hozAlign:"center", width:110,
+      { title:"Out of zone", field:"out_of_zone", hozAlign:"center", width:90,
         headerTooltip:"Guest from another zone \u2014 captured for Special Event attendance only, hidden from Batawa/AFA/roster. Setting this by hand locks it against the W2H sync.",
         formatter:"tickCross", editor:"tickCross",
         cellEdited: async (cell)=>{
