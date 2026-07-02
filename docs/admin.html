@@ -421,7 +421,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let admin = null;
 
 // ---- nav structure ----
-const APP_VERSION = "2026.06.24d";   // bump on each deploy; shown at the bottom of the menu
+const APP_VERSION = "2026.07.02a";   // bump on each deploy; shown at the bottom of the menu
 const NAV = [
   { title:"Operations", open:true, items:[["attendance","Attendance"],["afa","First Aid Attendance"]] },
   { title:"Reports",    open:true, items:[["rep_batawa","Batawa Commitment"],["rep_se","Special Events"]] },
@@ -899,14 +899,14 @@ async function loadCommitment(){
       placeholder:"No Batawa shifts in this range. Backfill shifts and seed attendance first.",
       columns: [
         { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
-        { title:"Total", field:"shifts_total", hozAlign:"center", width:84, minWidth:80, sorter:"number",
+        { title:"Total", field:"shifts_total", hozAlign:"center", width:70, minWidth:64, sorter:"number",
           formatter:c=>{
             const r=c.getRow().getData();
             if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
             const col = r.met ? "var(--go)" : "var(--red)";
             return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
           } },
-        { title:"Target", field:"target", hozAlign:"center", width:90, minWidth:86, sorter:"number" },
+        { title:"Tgt", field:"target", hozAlign:"center", width:70, minWidth:64, sorter:"number", headerTooltip:"Target" },
         { title:"Status", field:"met", hozAlign:"center", widthGrow:1, minWidth:120,
           formatter:c=>{
             const r=c.getRow().getData();
@@ -915,9 +915,9 @@ async function loadCommitment(){
             return r.met ? '<span class="badge b-out">on track</span>'
                          : `<span class="badge b-in">short ${r.shortfall}</span>`;
           } },
-        { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:110, minWidth:100, sorter:"number", headerTooltip:"Shifts attended" },
-        { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:110, minWidth:104, sorter:"number", headerTooltip:"Shifts cancelled" },
-        { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:110, minWidth:100, sorter:"number", headerTooltip:"Shifts rostered" },
+        { title:"Att.",  field:"shifts_attended",  hozAlign:"center", width:90, minWidth:80, sorter:"number", headerTooltip:"Shifts attended" },
+        { title:"Canc.", field:"shifts_cancelled", hozAlign:"center", width:90, minWidth:80, sorter:"number", headerTooltip:"Shifts cancelled" },
+        { title:"Rost.", field:"shifts_rostered",  hozAlign:"center", width:90, minWidth:80, sorter:"number", headerTooltip:"Shifts rostered" },
       ],
     });
   }
