@@ -52,9 +52,9 @@
   .navtoggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);
     border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;margin-right:10px}
   .navtoggle:hover{background:var(--snow)}
-  /* Let People-table column headers wrap onto two lines instead of truncating. */
-  #peopletable .tabulator-col .tabulator-col-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
-  #peopletable .tabulator-header .tabulator-col{vertical-align:top}
+  /* Let column headers wrap onto two lines instead of truncating (all tables). */
+  .tabulator .tabulator-col .tabulator-col-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
+  .tabulator .tabulator-header .tabulator-col{vertical-align:top}
   .side{flex:0 0 220px;position:sticky;top:62px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
   .navsec{margin:0}
@@ -195,7 +195,7 @@
 <!-- APP SHELL -->
 <div id="app" class="hidden">
   <div class="topbar">
-    <div class="brand">Frontenac Zone · Admin</div>
+    <div class="brand"><button class="navtoggle" onclick="toggleNav()" title="Show/hide the menu" style="margin-right:12px">&#9776;</button>Frontenac Zone · Admin</div>
     <div class="topright">
       <span class="who">Signed in as <b id="hello"></b></span>
       <button class="ghost" onclick="doSignout()">Sign out</button>
@@ -298,7 +298,6 @@
       <section id="view-people" class="hidden">
         <h2 class="vtitle">People</h2>
         <div class="toolbar">
-          <button class="navtoggle" onclick="toggleNav()" title="Show/hide the menu">&#9776; Menu</button>
           <button class="ghost" onclick="loadPeople()">Refresh</button>
           <button class="ghost" onclick="exportPeople()">Export CSV</button>
           <span class="count" id="peoplesummary"></span>
@@ -456,8 +455,16 @@ function setOpenSection(title){
 function toggleNav(){
   const lay=document.querySelector(".layout");
   if(lay) lay.classList.toggle("navhidden");
-  // Tabulator needs a nudge to recompute column widths after the width changes.
-  setTimeout(()=>{ if(peopleTable) peopleTable.redraw(true); }, 60);
+  // Tabulator tables need a nudge to recompute column widths after the width change.
+  setTimeout(()=>{
+    [ (typeof peopleTable!=="undefined"&&peopleTable),
+      (typeof cmTable!=="undefined"&&cmTable),
+      (typeof seTable!=="undefined"&&seTable),
+      (typeof afaTable!=="undefined"&&afaTable),
+      (typeof shiftsTable!=="undefined"&&shiftsTable),
+      (typeof syncTable!=="undefined"&&syncTable) ]
+      .forEach(t=>{ try{ if(t&&t.redraw) t.redraw(true); }catch(_){} });
+  }, 60);
 }
 function renderNav(){
   const side=document.getElementById("side"); side.innerHTML="";
