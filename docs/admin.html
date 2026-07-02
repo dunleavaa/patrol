@@ -53,7 +53,7 @@
     border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;margin-right:10px}
   .navtoggle:hover{background:var(--snow)}
   /* Let column headers wrap onto two lines instead of truncating (all tables). */
-  .tabulator .tabulator-col .tabulator-col-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
+  .tabulator .tabulator-col .tabulator-col-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2;word-break:normal;overflow-wrap:anywhere}
   .tabulator .tabulator-header .tabulator-col{vertical-align:top}
   .side{flex:0 0 220px;position:sticky;top:62px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
@@ -893,14 +893,14 @@ async function loadCommitment(){
       placeholder:"No Batawa shifts in this range. Backfill shifts and seed attendance first.",
       columns: [
         { title:"Patroller", field:"name", sorter:"string", widthGrow:3, minWidth:170, headerFilter:"input" },
-        { title:"Total", field:"shifts_total", hozAlign:"center", width:78, sorter:"number",
+        { title:"Total", field:"shifts_total", hozAlign:"center", width:78, minWidth:70, sorter:"number",
           formatter:c=>{
             const r=c.getRow().getData();
             if(r.exempt) return `<span class="hrs" style="color:var(--muted)">${c.getValue()}</span>`;
             const col = r.met ? "var(--go)" : "var(--red)";
             return `<span class="hrs" style="color:${col}">${c.getValue()}</span>`;
           } },
-        { title:"Target", field:"target", hozAlign:"center", width:88, sorter:"number" },
+        { title:"Target", field:"target", hozAlign:"center", width:88, minWidth:74, sorter:"number" },
         { title:"Status", field:"met", hozAlign:"center", widthGrow:1, minWidth:120,
           formatter:c=>{
             const r=c.getRow().getData();
@@ -909,9 +909,9 @@ async function loadCommitment(){
             return r.met ? '<span class="badge b-out">on track</span>'
                          : `<span class="badge b-in">short ${r.shortfall}</span>`;
           } },
-        { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:112, sorter:"number" },
-        { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:116, sorter:"number" },
-        { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:112, sorter:"number" },
+        { title:"Attended",  field:"shifts_attended",  hozAlign:"center", width:112, minWidth:96, sorter:"number" },
+        { title:"Cancelled", field:"shifts_cancelled", hozAlign:"center", width:116, minWidth:100, sorter:"number" },
+        { title:"Rostered",  field:"shifts_rostered",  hozAlign:"center", width:112, minWidth:96, sorter:"number" },
       ],
     });
   }
