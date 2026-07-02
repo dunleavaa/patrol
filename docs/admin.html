@@ -1120,13 +1120,14 @@ async function loadPeople(){
   const sum=document.getElementById("peoplesummary");
   sum.textContent="Loading…";
   const { data, error } = await db.from("people")
-    .select("helper_number,name,first_name,last_name,email,phone,cell,city,commitment_exempt,special_events_exempt")
+    .select("helper_number,name,first_name,last_name,email,phone,cell,city,commitment_exempt,special_events_exempt,out_of_zone,out_of_zone_manual")
     .order("name");
   if(error){ sum.textContent=error.message; return; }
   const rows=(data||[]).map(p=>({
     helper_number:p.helper_number, name:p.name, email:p.email||"",
     phone:p.cell||p.phone||"", city:p.city||"",
     commitment_exempt:!!p.commitment_exempt, special_events_exempt:!!p.special_events_exempt,
+    out_of_zone:!!p.out_of_zone, out_of_zone_manual:!!p.out_of_zone_manual,
   }));
   sum.textContent = `${rows.length} ${rows.length===1?"person":"people"}`;
 
@@ -1166,6 +1167,19 @@ async function loadPeople(){
             .update({ special_events_exempt: cell.getValue() })
             .eq("helper_number", r.helper_number);
           if(error){ alert(error.message); cell.restoreOldValue(); }
+        } },
+      { title:"Out of zone", field:"out_of_zone", hozAlign:"center", width:110,
+        headerTooltip:"Guest from another zone \u2014 captured for Special Event attendance only, hidden from Batawa/AFA/roster. Setting this by hand locks it against the W2H sync.",
+        formatter:"tickCross", editor:"tickCross",
+        cellEdited: async (cell)=>{
+          const r=cell.getRow().getData();
+          // A manual toggle also sets out_of_zone_manual so the sync won't overwrite it.
+          const val = cell.getValue();
+          const { error } = await db.from("people")
+            .update({ out_of_zone: val, out_of_zone_manual: true })
+            .eq("helper_number", r.helper_number);
+          if(error){ alert(error.message); cell.restoreOldValue(); }
+          else { r.out_of_zone_manual = true; }
         } },
     ],
   });
