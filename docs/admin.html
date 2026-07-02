@@ -46,7 +46,12 @@
   .ghost{background:#fff;border:1px solid var(--line);color:var(--alpine);font-weight:600;
     border-radius:9px;padding:8px 12px;cursor:pointer;font-size:14px}
 
-  .layout{display:flex;align-items:flex-start;width:80%;max-width:none;margin:0 auto;gap:26px;padding:22px 20px 60px}
+  .layout{display:flex;align-items:flex-start;width:96%;max-width:1600px;margin:0 auto;gap:26px;padding:22px 20px 60px}
+  /* collapsed sidebar: hide the nav and let content take the full width */
+  .layout.navhidden .side{display:none}
+  .navtoggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;margin-right:10px}
+  .navtoggle:hover{background:var(--snow)}
   .side{flex:0 0 220px;position:sticky;top:62px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
   .navsec{margin:0}
@@ -290,6 +295,7 @@
       <section id="view-people" class="hidden">
         <h2 class="vtitle">People</h2>
         <div class="toolbar">
+          <button class="navtoggle" onclick="toggleNav()" title="Show/hide the menu">\u2630 Menu</button>
           <button class="ghost" onclick="loadPeople()">Refresh</button>
           <button class="ghost" onclick="exportPeople()">Export CSV</button>
           <span class="count" id="peoplesummary"></span>
@@ -443,6 +449,12 @@ function setOpenSection(title){
     const t=box.dataset.title||"";
     box.classList.toggle("collapsed", !(t && t===title));
   });
+}
+function toggleNav(){
+  const lay=document.querySelector(".layout");
+  if(lay) lay.classList.toggle("navhidden");
+  // Tabulator needs a nudge to recompute column widths after the width changes.
+  setTimeout(()=>{ if(peopleTable) peopleTable.redraw(true); }, 60);
 }
 function renderNav(){
   const side=document.getElementById("side"); side.innerHTML="";
@@ -1142,8 +1154,8 @@ async function loadPeople(){
     placeholder: "No people synced yet.",
     initialSort: [{ column:"name", dir:"asc" }],
     columns: [
-      { title:"Name",  field:"name",  sorter:"string", widthGrow:2, headerFilter:"input" },
-      { title:"Email", field:"email", sorter:"string", widthGrow:2, headerFilter:"input",
+      { title:"Name",  field:"name",  sorter:"string", widthGrow:3, minWidth:180, headerFilter:"input" },
+      { title:"Email", field:"email", sorter:"string", widthGrow:3, minWidth:200, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
       { title:"Phone", field:"phone", sorter:"string", width:150, headerFilter:"input",
         formatter:c=> c.getValue() || "—" },
